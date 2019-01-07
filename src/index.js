@@ -15,7 +15,7 @@ class ServerlessPluginPubSub {
   constructor(serverless, options) {
     this.serverless = serverless;
     this.options = options;
-    this.naming = this.serverless.provider('aws').naming;
+    this.naming = this.serverless.getProvider('aws').naming;
 
     // Note: getQueueLogicalId gets the event source mapping logical Id
     this.naming.getActualQueueLogicalId = (queueName) =>
@@ -319,7 +319,7 @@ class ServerlessPluginPubSub {
    */
   namespaceResource(resourceName) {
     const serviceName = this.serverless.service.service;
-    const stage = this.serverless.provider('aws').getStage();
+    const stage = this.serverless.getProvider('aws').getStage();
     return `${serviceName}-${stage}-${resourceName}`;
   }
 
