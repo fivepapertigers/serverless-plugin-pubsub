@@ -29,7 +29,7 @@ class ServerlessPluginPubSub {
 
     this.commands = {};
     this.hooks = {
-      'before:aws:package:finalize:mergeCustomProviderResources': this.generateResources.bind(this),
+      'before:package:createDeploymentArtifacts': this.generateResources.bind(this),
     };
 
     this.injectVariableReplacementSyntax();
@@ -97,6 +97,12 @@ class ServerlessPluginPubSub {
 
     for (let funcKey in funcs) {
       const func = funcs[funcKey];
+      let additionalEvents = [];
+
+      if (!func.events) {
+        func.events = [];
+      }
+
       for (let idx = 0; idx < (func.events || []).length; idx++) {
         let evt = func.events[idx],
           topic,
@@ -130,24 +136,20 @@ class ServerlessPluginPubSub {
         createTopicIfNotExists(topic);
 
         if (queue) {
-          let sourceMapping = {};
+          let queueEvent = {};
           if (queue === true) {
             queue = `${funcKey}-queue`;
           } else if (typeof queue !== 'string') {
             let {name, batchSize, enabled, startingPosition} = queue;
             queue = name;
-            if (batchSize !== undefined) {
-              sourceMapping.BatchSize = batchSize;
+            if (batchSize) {
+              queueEvent.batchSize = batchSize;
             }
-            if (enabled !== undefined) {
-              // Cast to string if boolean provided
-              if (typeof enabled === 'boolean') {
-                enabled = enabled ? 'True' : 'False';
-              }
-              sourceMapping.Enabled = enabled;
+            if (enabled) {
+              queueEvent.enabled = enabled;
             }
-            if (startingPosition !== undefined) {
-              sourceMapping.StartingPosition = startingPosition;
+            if (startingPosition) {
+              queueEvent.startingPosition = startingPosition;
             }
           }
 
@@ -155,21 +157,23 @@ class ServerlessPluginPubSub {
             throw Error(`[PubSub] Invalid queue name for function ${funcKey} / topic ${topic}`);
           }
 
+
           // Generate the queue CFM resource if it doesn't already exist
-          createQueueIfNotExists(queue, true);
-          const evtSrcLogicalId = this.naming.getQueueLogicalId(funcKey, queue);
-          pubSubResources[evtSrcLogicalId] = this.generateQueueEventMapping(queue, funcKey, sourceMapping);
+          createQueueIfNotExists(queue);
+
+          // Create a "sqs" event for serverless
+          queueEvent.arn = {'Fn::GetAtt': [this.naming.getActualQueueLogicalId(queue), 'Arn']};
+          additionalEvents.push({sqs: queueEvent});
 
           subLogicalId = this.naming.getQueueSubscriptionLogicalId(topic, queue);
           pubSubResources[subLogicalId] = this.generateQueueSubscription(topic, queue, subscription);
           allowQueueSubscription(topic, queue);
         } else {
-            subLogicalId = this.naming.getLambdaSnsSubscriptionLogicalId(funcKey, topic);
-            pubSubResources[subLogicalId] =
-            this.generateLambdaSubscription(topic, funcKey, subscription);
+          additionalEvents.push({sns: {arn: this.formatTopicArn(topic), topicName: this.namespaceResource(topic)}});
         }
 
       }
+      func.events.push(...additionalEvents);
     }
 
     // Create any orphaned topics
@@ -186,19 +190,6 @@ class ServerlessPluginPubSub {
     return Promise.resolve();
   }
 
-  generateQueueEventMapping(queue, func, propOverrides) {
-    const props = {
-      EventSourceArn: {'Fn::GetAtt': [this.naming.getActualQueueLogicalId(queue), 'Arn']},
-      FunctionName: {Ref: this.naming.getLambdaLogicalId(func)},
-      Enabled: 'True',
-      BatchSize: 10,
-    };
-    return {
-      Type: 'AWS::Lambda::EventSourceMapping',
-      Properties: Object.assign(props, propOverrides)
-    };
-  }
-
   generateQueueSubscription(topic, queue, propOverrides) {
     const props = {
       TopicArn: this.formatTopicArn(topic),
@@ -211,17 +202,6 @@ class ServerlessPluginPubSub {
     };
   }
 
-  generateLambdaSubscription(topic, func, propOverrides) {
-    const props = {
-      TopicArn: this.formatTopicArn(topic),
-      Protocol: 'lambda',
-      Endpoint: {'Fn::GetAtt': [this.naming.getLambdaLogicalId(func), 'Arn']},
-    };
-    return {
-      Type: 'AWS::SNS::Subscription',
-      Properties: Object.assign(props, propOverrides)
-    };
-  }
 
   /**
    * Generates a CFM AWS::SQS::Queue Resource from the queue name

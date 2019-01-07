@@ -50,7 +50,7 @@ beforeEach(() => {
         },
       }
     },
-    provider: () => ({
+    getProvider: () => ({
       naming: {
         getQueueLogicalId: (func, queue) => `${normalizeNameToAlphaNumericOnly(queue)}To${func}`,
         getLambdaLogicalId: (funcName) => `${funcName}LogicalID`,
@@ -60,7 +60,10 @@ beforeEach(() => {
       },
 
       getStage: () => 'stageName'
-    })
+    }),
+    variables: {
+      getValueFromSource: () => ''
+    }
   };
   plugin = new ServerlessPluginPubSub(sls, options);
 });
@@ -194,47 +197,6 @@ describe('generateQueueResource method', () => {
 
 });
 
-describe('generateLambdaSubscription method', () => {
-
-  test('should generate a sns to lambda subscription resource', () => {
-    expect(plugin.generateLambdaSubscription('foo-happened', 'foo')).toEqual({
-      Type: 'AWS::SNS::Subscription',
-      Properties: {
-        TopicArn: {
-          'Fn::Join': [
-            ':', [
-              'arn', {Ref: 'AWS::Partition'}, 'sns', {Ref: 'AWS::Region'}, {Ref: 'AWS::AccountId'},
-              'serviceName-stageName-foo-happened'
-            ]
-          ]
-        },
-        Protocol: 'lambda',
-        Endpoint: {'Fn::GetAtt': ['fooLogicalID', 'Arn']}
-      }
-    });
-  });
-
-  test('should generate a sns to lambda subscription resource with overrides', () => {
-    expect(plugin.generateLambdaSubscription('foo-happened', 'foo', {RawMessageDelivery: true})).toEqual({
-      Type: 'AWS::SNS::Subscription',
-      Properties: {
-        TopicArn: {
-          'Fn::Join': [
-            ':', [
-              'arn', {Ref: 'AWS::Partition'}, 'sns', {Ref: 'AWS::Region'}, {Ref: 'AWS::AccountId'},
-              'serviceName-stageName-foo-happened'
-            ]
-          ]
-        },
-        RawMessageDelivery: true,
-        Protocol: 'lambda',
-        Endpoint: {'Fn::GetAtt': ['fooLogicalID', 'Arn']}
-      }
-    });
-  });
-
-});
-
 describe('generateQueueSubscription method', () => {
 
   test('should generate a sns to sqs subscription resource', () => {
@@ -270,34 +232,6 @@ describe('generateQueueSubscription method', () => {
         Protocol: 'sqs',
         RawMessageDelivery: true,
         Endpoint: {'Fn::GetAtt': ['SQSQueuebarqueue', 'Arn']}
-      }
-    });
-  });
-
-});
-
-describe('generateQueueEventMapping method', () => {
-
-  test('should generate a sns to sqs subscription resource', () => {
-    expect(plugin.generateQueueEventMapping('bar-queue', 'foo')).toEqual({
-      Type: 'AWS::Lambda::EventSourceMapping',
-      Properties: {
-        EventSourceArn: {'Fn::GetAtt': ['SQSQueuebarqueue', 'Arn']},
-        FunctionName: {Ref: 'fooLogicalID'},
-        Enabled: 'True',
-        BatchSize: 10,
-      }
-    });
-  });
-
-  test('should generate a sns to sqs subscription resource with overrides', () => {
-    expect(plugin.generateQueueEventMapping('bar-queue', 'foo', {BatchSize: 1})).toEqual({
-      Type: 'AWS::Lambda::EventSourceMapping',
-      Properties: {
-        EventSourceArn: {'Fn::GetAtt': ['SQSQueuebarqueue', 'Arn']},
-        FunctionName: {Ref: 'fooLogicalID'},
-        Enabled: 'True',
-        BatchSize: 1,
       }
     });
   });
@@ -372,24 +306,6 @@ describe('generateResources method', () => {
         },
         Type: 'AWS::SNS::Subscription'
       },
-      foohappenedTobaz: {
-        Properties: {
-          Endpoint: {'Fn::GetAtt': ['bazLogicalID', 'Arn']},
-          Protocol: 'lambda',
-          TopicArn: {'Fn::Join': [':', ['arn', {Ref: 'AWS::Partition'}, 'sns', {Ref: 'AWS::Region'}, {Ref: 'AWS::AccountId'}, 'serviceName-stageName-foo-happened']]}
-        },
-        Type: 'AWS::SNS::Subscription'
-      },
-      barqueueTobar: {
-        Properties: {
-          BatchSize: 10, Enabled: 'True',
-          EventSourceArn: {
-            'Fn::GetAtt': ['SQSQueuebarqueue', 'Arn']
-          },
-          FunctionName: {Ref: 'barLogicalID'}
-        },
-        Type: 'AWS::Lambda::EventSourceMapping'
-      }
     });
   });
 });
