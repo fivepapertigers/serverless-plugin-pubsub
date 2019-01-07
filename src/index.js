@@ -5,7 +5,10 @@
 
 const Promise = require('bluebird');
 
+const pubSubTopicSyntax = RegExp(/^pubSubTopic:/g);
+
 const { logWarning } = require('serverless/lib/classes/Error');
+
 
 class ServerlessPluginPubSub {
 
@@ -28,6 +31,8 @@ class ServerlessPluginPubSub {
     this.hooks = {
       'before:aws:package:finalize:mergeCustomProviderResources': this.generateResources.bind(this),
     };
+
+    this.injectVariableReplacementSyntax();
   }
 
 
@@ -343,6 +348,24 @@ class ServerlessPluginPubSub {
 
     };
   }
+
+
+  /**
+   * Injects the pubSubTopic replacement syntax into the serverless variable
+   * processing
+   */
+  injectVariableReplacementSyntax() {
+    const originalMethod = this.serverless.variables.getValueFromSource.bind(this.serverless.variables);
+    const self = this;
+    this.serverless.variables.getValueFromSource = function (variableString) {
+      if (variableString.match(pubSubTopicSyntax)){
+        const topic = variableString.replace(pubSubTopicSyntax, '');
+        return self.formatTopicArn(topic);
+      }
+      return originalMethod(variableString);
+    };
+  }
+
 }
 
 
