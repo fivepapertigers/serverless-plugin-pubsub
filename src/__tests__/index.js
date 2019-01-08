@@ -48,7 +48,8 @@ beforeEach(() => {
             'bar-queue': {DelaySeconds: 5},
           }
         },
-      }
+      },
+      provider: {},
     },
     getProvider: () => ({
       naming: {
