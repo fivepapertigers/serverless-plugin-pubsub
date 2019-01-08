@@ -37,7 +37,7 @@ npm install --save-dev serverless-plugin-pubsub
 
 And add the following to your Serverless confing:
 
-```bash
+```yaml
 plugins:
   - serverless-plugin-pubsub
 ```
