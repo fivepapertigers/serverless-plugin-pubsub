@@ -32,7 +32,10 @@ class ServerlessPluginPubSub {
       'after:package:initialize': this.generateResources.bind(this),
     };
 
+    this.variableReplaceTopics = [];
+
     this.injectVariableReplacementSyntax();
+
   }
 
 
@@ -57,6 +60,8 @@ class ServerlessPluginPubSub {
         Resource: this.formatTopicArn(topicName)
       });
     };
+
+    this.variableReplaceTopics.forEach(createTopicIfNotExists);
 
     const createQueueIfNotExists = (queueName, warn) => {
       const queueLogicalId = this.naming.getActualQueueLogicalId(queueName);
@@ -346,6 +351,7 @@ class ServerlessPluginPubSub {
     this.serverless.variables.getValueFromSource = function (variableString) {
       if (variableString.match(pubSubTopicSyntax)){
         const topic = variableString.replace(pubSubTopicSyntax, '');
+        self.variableReplaceTopics.push(topic);
         return self.formatTopicArn(topic);
       }
       return originalMethod(variableString);
