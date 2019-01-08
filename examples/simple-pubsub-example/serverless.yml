@@ -1,0 +1,52 @@
+service: simple-pubSub
+
+
+provider:
+  name: aws
+  runtime: nodejs8.10
+  region: us-east-1
+  profile: ${opt:profile,''}
+
+plugins:
+  # Import local plugins from the localPath directory
+  localPath: '../../src'
+  modules:
+    - index
+
+package:
+  excludeDevDependencies: false
+
+
+functions:
+
+  foo:
+    handler: handler.foo
+    environment:
+      PUBLISH_TOPIC: ${pubSubTopic:foo-happened}
+
+  bar:
+    handler: handler.bar
+    events:
+      - pubSub:
+          topic: foo-happened
+          queue: true
+    environment:
+      PUBLISH_TOPIC: ${pubSubTopic:bar-happened}
+
+  baz:
+    handler: handler.baz
+    events:
+      - pubSub:
+          topic: foo-happened
+          queue: false
+    environment:
+      PUBLISH_TOPIC: ${pubSubTopic:baz-happened}
+
+custom:
+  pubSub:
+    topics:
+      foo-happened:
+        DisplayName: 'FooDefinitelyHappened'
+    queues:
+      bar-queue:
+        DelaySeconds: 5
