@@ -140,6 +140,28 @@ custom:
         MessageRetentionPeriod: 60
 ```
 
+
+Cloudformation configuration can also be added to the topic/queue _subscriptions_, by using the `subscription` keyword. This _should_ be specified at the `functions` since a subscription is inherently unique. The `topic.subscription` and `queue.subscription` accept Cloudformation properties for `AWS::SNS::Subscription` and `AWS::Lambda::EventSourceMapping` respectively. Note that if a queue is not specified, the `AWS::SNS::Subscription` will use the `lambda` protocol, not the `sqs` protocol.
+
+```
+functions:
+  myTopicConsumer:
+    handler: mymodule.myhandler
+    events:
+      - pubSub:
+          topic:
+            name: my-first-topic
+            subscription:
+              DeliveryPolicy:
+                throttlePolicy:
+                  maxReceivesPerSecond: 3
+          queue:
+            name: myTopicConsumer-queue
+            subscription:
+              BatchSize: 1
+```
+
+
 ## Contributing
 
 Please open a Github issue with any bug reports or feature suggestions.

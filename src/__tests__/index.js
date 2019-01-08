@@ -24,7 +24,22 @@ beforeEach(() => {
             PUBLISH_TOPIC: 'bar-happened'
           },
           events: [{
-            pubSub: {topic: 'foo-happened', queue: 'bar-queue'}
+            pubSub: {
+              topic: {
+                name: 'foo-happened',
+                subscription: {
+                  DeliveryPolicy: {
+                    throttlePolicy: {maxReceivesPerSecond: 3}
+                  }
+                }
+              },
+              queue: {
+                name: 'bar-queue',
+                subscription: {
+                  BatchSize: 1
+                }
+              }
+            }
           }]
         },
         baz: {
@@ -300,12 +315,22 @@ describe('generateResources method', () => {
               'Arn'
             ]
           },
+          DeliveryPolicy: {
+            throttlePolicy: {
+              maxReceivesPerSecond: 3,
+            },
+          },
           Protocol: 'sqs',
           TopicArn: {
             'Fn::Join': [':', ['arn', {Ref: 'AWS::Partition'}, 'sns', {Ref: 'AWS::Region'}, {Ref: 'AWS::AccountId'}, 'serviceName-stageName-foo-happened']]
           }
         },
         Type: 'AWS::SNS::Subscription'
+      },
+      barqueueTobar: {
+        Properties: {
+          BatchSize: 1,
+        },
       },
     });
   });
