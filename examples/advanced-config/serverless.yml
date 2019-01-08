@@ -1,4 +1,4 @@
-service: simple-pubSub
+service: advanced-config-pubSub
 
 
 provider:
@@ -16,7 +16,6 @@ plugins:
 package:
   excludeDevDependencies: false
 
-
 functions:
 
   foo:
@@ -29,7 +28,9 @@ functions:
     events:
       - pubSub:
           topic: foo-happened
-          queue: true
+          queue:
+            subscription:
+              BatchSize: 1
     environment:
       PUBLISH_TOPIC: ${pubSubTopic:bar-happened}
 
@@ -37,6 +38,21 @@ functions:
     handler: handler.baz
     events:
       - pubSub:
-          topic: foo-happened
+          topic:
+            name: foo-happened
+            subscription:
+              DeliveryPolicy:
+                throttlePolicy:
+                  maxReceivesPerSecond: 18
+          queue: false
     environment:
       PUBLISH_TOPIC: ${pubSubTopic:baz-happened}
+
+custom:
+  pubSub:
+    topics:
+      foo-happened:
+        DisplayName: 'FooDefinitelyHappened'
+    queues:
+      bar-queue:
+        DelaySeconds: 5
