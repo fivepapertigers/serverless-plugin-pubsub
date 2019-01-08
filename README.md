@@ -31,13 +31,13 @@ With those limitations in mind, this plugin aims to provide the following for th
 
 Install the plugin with:
 
-```
+```bash
 npm install --save-dev serverless-plugin-pubsub
 ```
 
 And add the following to your Serverless confing:
 
-```
+```bash
 plugins:
   - serverless-plugin-pubsub
 ```
@@ -148,12 +148,12 @@ Feel free to open a pull request with any additions or enhancements. A failing t
 
 To install:
 
-```
+```bash
 npm install
 ```
 
 To run tests:
-```
+```bash
 npm test
 # or
 npm test --- --watch
