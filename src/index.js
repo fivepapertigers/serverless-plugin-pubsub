@@ -29,7 +29,7 @@ class ServerlessPluginPubSub {
 
     this.commands = {};
     this.hooks = {
-      'before:package:createDeploymentArtifacts': this.generateResources.bind(this),
+      'after:package:initialize': this.generateResources.bind(this),
     };
 
     this.injectVariableReplacementSyntax();
@@ -50,6 +50,12 @@ class ServerlessPluginPubSub {
       if (!pubSubResources[topicLogicalId]) {
         pubSubResources[topicLogicalId] = this.generateTopicResource(topicName);
       }
+
+      this.iamRoleStatements.push({
+        Effect: 'Allow',
+        Action: ['sns:Publish'],
+        Resource: this.formatTopicArn(topicName)
+      });
     };
 
     const createQueueIfNotExists = (queueName, warn) => {
@@ -344,6 +350,17 @@ class ServerlessPluginPubSub {
       }
       return originalMethod(variableString);
     };
+  }
+
+  /**
+   * Gets the iam role statements from config
+   * @return {object} iam role statements
+   */
+  get iamRoleStatements() {
+    if (!this.serverless.service.provider.iamRoleStatements) {
+      this.serverless.service.provider.iamRoleStatements = [];
+    }
+    return this.serverless.service.provider.iamRoleStatements;
   }
 
 }
