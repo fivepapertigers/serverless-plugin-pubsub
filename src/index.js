@@ -118,7 +118,7 @@ class ServerlessPluginPubSub {
         let evt = func.events[idx],
           topic,
           queue = false,
-          subscription,
+          topicSubscription,
           subLogicalId;
         // Skip events that are not pubSub
         if (!evt || !evt.pubSub) {
@@ -133,11 +133,18 @@ class ServerlessPluginPubSub {
         // that as the topic name (and assume no queue config)
         if (typeof pubSub === 'string') {
           topic = pubSub;
-        // If not, we pull topic and queue from their respective config
+        // topic may also be set to a string, in which case we interpret that
+        // as the topic name
         } else {
-          topic = pubSub.topic;
           queue = pubSub.queue;
-          subscription = pubSub.subscription;
+          if (typeof pubSub.topic === 'string') {
+            topic = pubSub.topic;
+          // topic may also be an object, in which case topic.name is the topic
+          // name, and we pull subscription from the topic object as well
+          } else if (pubSub.topic) {
+            topic = pubSub.topic.name;
+            topicSubscription = pubSub.topic.subscription;
+          }
         }
 
         if (!topic) {
@@ -147,38 +154,39 @@ class ServerlessPluginPubSub {
         createTopicIfNotExists(topic);
 
         if (queue) {
-          let queueEvent = {};
-          if (queue === true) {
-            queue = `${funcKey}-queue`;
-          } else if (typeof queue !== 'string') {
-            let {name, batchSize, enabled, startingPosition} = queue;
-            queue = name;
-            if (batchSize) {
-              queueEvent.batchSize = batchSize;
-            }
-            if (enabled) {
-              queueEvent.enabled = enabled;
-            }
-            if (startingPosition) {
-              queueEvent.startingPosition = startingPosition;
+          let queueEvent = {},
+              queueSubscription,
+              queueName = `${funcKey}-queue`;
+
+          if (typeof queue !== 'string' && queue !== true) {
+            if (queue !== true) {
+              queueSubscription = queue.subscription;
+              if (queue.name) {
+                queueName = queue.name;
+              }
             }
           }
 
-          if (!queue) {
-            throw Error(`[PubSub] Invalid queue name for function ${funcKey} / topic ${topic}`);
-          }
-
+          const queueLogicalId = this.naming.getActualQueueLogicalId(queueName);
 
           // Generate the queue CFM resource if it doesn't already exist
-          createQueueIfNotExists(queue);
+          createQueueIfNotExists(queueName);
 
           // Create a "sqs" event for serverless
-          queueEvent.arn = {'Fn::GetAtt': [this.naming.getActualQueueLogicalId(queue), 'Arn']};
+          queueEvent.arn = {'Fn::GetAtt': [queueLogicalId, 'Arn']};
           additionalEvents.push({sqs: queueEvent});
 
-          subLogicalId = this.naming.getQueueSubscriptionLogicalId(topic, queue);
-          pubSubResources[subLogicalId] = this.generateQueueSubscription(topic, queue, subscription);
-          allowQueueSubscription(topic, queue);
+          subLogicalId = this.naming.getQueueSubscriptionLogicalId(topic, queueName);
+          pubSubResources[subLogicalId] = this.generateQueueSubscription(topic, queueName, topicSubscription);
+
+          // If subscription properties are defined, add that to the resource
+          // that Serverless creates
+          if (queueSubscription) {
+            pubSubResources[this.naming.getQueueLogicalId(funcKey, queueName)] = {
+              Properties: queueSubscription
+            };
+          }
+          allowQueueSubscription(topic, queueName);
         } else {
           additionalEvents.push({sns: {arn: this.formatTopicArn(topic), topicName: this.namespaceResource(topic)}});
         }
