@@ -176,13 +176,13 @@ class ServerlessPluginPubSub {
           queueEvent.arn = {'Fn::GetAtt': [queueLogicalId, 'Arn']};
           additionalEvents.push({sqs: queueEvent});
 
-          subLogicalId = this.naming.getQueueSubscriptionLogicalId(topic, queueLogicalId);
+          subLogicalId = this.naming.getQueueSubscriptionLogicalId(topic, queueName);
           pubSubResources[subLogicalId] = this.generateQueueSubscription(topic, queueName, topicSubscription);
 
           // If subscription properties are defined, add that to the resource
           // that Serverless creates
           if (queueSubscription) {
-            pubSubResources[this.naming.getQueueLogicalId(funcKey, queueLogicalId)] = {
+            pubSubResources[this.naming.getQueueLogicalId(funcKey, queueName)] = {
               Properties: queueSubscription
             };
           }
