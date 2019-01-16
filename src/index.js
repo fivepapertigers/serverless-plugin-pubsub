@@ -7,8 +7,100 @@ const Promise = require('bluebird');
 
 const pubSubTopicSyntax = RegExp(/^pubSubTopic:/g);
 
-const { logWarning } = require('serverless/lib/classes/Error');
+const {
+  Func, Topic, Queue, QueueToFuncSubscription,
+  TopicToQueueSubscription, TopicToFuncSubscription
+} = require('./models');
 
+
+function unique(iterable, selector) {
+  let results = new Set();
+  return iterable.filter(item => {
+    const result = selector(item);
+    if (results.has(result)) {
+      return false;
+    }
+    results.add(results);
+    return true;
+  });
+}
+
+/**
+ * Collects the topic name from a pubSub event
+ * @param  {object} pubSub PubSub event
+ * @return {string}        topic name
+ */
+function pullTopicNameFromEvent(pubSub) {
+  let name;
+  // pubSub may be set to a string, in which case, we interpret
+  // that as the topic name (and assume no queue config)
+  if (typeof pubSub === 'string') {
+    name = pubSub;
+  // topic may also be set to a string, in which case we interpret that
+  // as the topic name
+  } else if (pubSub && typeof pubSub.topic === 'string') {
+    name = pubSub.topic;
+    // topic may also be an object, in which case topic.name is the topic
+    // name, and we pull subscription from the topic object as well
+  } else if (pubSub && pubSub.topic) {
+    name = pubSub.topic.name;
+  }
+
+  return name;
+}
+
+
+/**
+ * Collects the queue name from a pubSub event
+ * @param  {object} pubSub PubSub event
+ * @return {string}        queue name
+ */
+function pullQueueNameFromEvent(pubSub, func) {
+  let name;
+
+  // Short-circuit if no queue attribute, or falsey
+  if (!pubSub || !pubSub.queue) {
+    return null;
+  } else if (pubSub.queue === true) {
+    name = `${func.name}-queue`;
+  } else if (typeof pubSub.queue === 'string') {
+    name = pubSub.queue;
+  } else {
+    return pubSub.queue.name;
+  }
+
+  return name;
+}
+
+
+/**
+ * Collects queue subscription details from a pubSub event
+ * @param  {object} pubSub PubSub event
+ * @return {object}        subscription details
+ */
+function pullQueueSubscriptionDetailsFromEvent(pubSub) {
+  return (pubSub && pubSub.queue && pubSub.queue.subscription) || null;
+}
+
+
+/**
+ * Collects topic subscription details from a pubSub event
+ * @param  {object} pubSub PubSub event
+ * @return {object}        subscription details
+ */
+function pullTopicSubscriptionDetailsFromEvent(pubSub) {
+  return (pubSub && pubSub.topic && pubSub.topic.subscription) || null;
+}
+
+
+function getOrSet(name, collection, createFunc) {
+  let item = collection.find(i => i.name === name);
+  if (!item) {
+    item = createFunc();
+    collection.push(item);
+  }
+  return item;
+}
 
 class ServerlessPluginPubSub {
 
@@ -29,231 +121,292 @@ class ServerlessPluginPubSub {
 
     this.commands = {};
     this.hooks = {
-      'after:package:initialize': this.generateResources.bind(this),
+      'after:package:initialize':
+        () => {
+          this.collectPubSubResourcesFromFunctions();
+          this.collectPubSubResourcesFromCustomConfig();
+          this.generateAdditionalEvents();
+          this.generateAllCustomResources();
+          this.allowLambdasToPublishSNS();
+          this.allowSNSToSQSSubscriptions();
+          return Promise.resolve();
+        },
     };
 
-    this.variableReplaceTopics = [];
+
+    this.topics = [];
+    this.funcs = [];
+    this.subscriptions = [];
+    this.queues = [];
+
 
     this.injectVariableReplacementSyntax();
 
   }
 
-
+  /**
+   * Gets a Topic from the global state or creates one
+   * @param  {string} queueName   Name of the topic
+   * @return {Topic}
+   */
+  getTopic(topicName) {
+   return getOrSet(topicName, this.topics, () => new Topic({
+        name: topicName, vendorConfig: this.customTopics[topicName] || {}
+    }));
+  }
 
   /**
-   * Generates custom resources for pubSub
+   * Gets a Queue from the global state or creates one
+   * @param  {string} queueName   Name of the queue
+   * @return {Queue}
    */
-  generateResources(){
-    const funcs = this.serverless.service.functions;
+  getQueue(queueName) {
+    return getOrSet(queueName, this.queues, () => new Queue({
+      name: queueName, vendorConfig: this.customQueues[queueName] || {}
+    }));
+  }
+
+  /**
+   * Gets a Func from the global state or creates one
+   * @param  {string} funcName   Name of the serverless function
+   * @param  {object} funcConfig The serveless config for the function
+   * @return {Func}
+   */
+  getFunc(funcName, funcConfig) {
+    return getOrSet(funcName, this.funcs, () => new Func({
+      name: funcName, serverlessConfig: funcConfig
+    }));
+  }
+
+  /**
+   * Collects all pubSub resources that are references in the service's
+   * pubSub events.
+   */
+  collectPubSubResourcesFromFunctions(){
+    const funcs = this.serverless.service.functions || {};
+
+    // Loops over all function definitions
+    Object.keys(funcs).forEach(funcName => {
+
+      // Get the Func resource for this function (creating it doesn't exist)
+      const func = this.getFunc(funcName, funcs[funcName]);
+
+      // Loop over all of the Func's pubSub events
+      func.pubSubEvents.forEach(({pubSub}) => {
+
+        // Pull the topic name (required)
+        const topicName = pullTopicNameFromEvent(pubSub);
+        if (!topicName) {
+          throw Error(`No topic could be identified for pubSub subscription to ${funcName}`);
+        }
 
 
-    const pubSubResources = {};
-    const createTopicIfNotExists = (topicName) => {
-      const topicLogicalId = this.naming.getTopicLogicalId(topicName);
-      if (!pubSubResources[topicLogicalId]) {
-        pubSubResources[topicLogicalId] = this.generateTopicResource(topicName);
-      }
+        // Get or create the Topic resource
+        const topic = this.getTopic(topicName);
 
-      this.iamRoleStatements.push({
-        Effect: 'Allow',
-        Action: ['sns:Publish'],
-        Resource: this.formatTopicArn(topicName)
+        // Pull the topic subscription details
+        const topicSubDetails = pullTopicSubscriptionDetailsFromEvent(pubSub);
+
+        // Pull the queue name
+        const queueName = pullQueueNameFromEvent(pubSub, func);
+
+        // If a queue is defined, we assume Topic -> Queue -> Func
+        if (queueName) {
+
+          // Get or create the Queue Resource
+          const queue = this.getQueue(queueName);
+
+          // Create the [Queue -> Func] and the [Topic -> Queue] subscriptions
+          this.subscriptions.push(
+            new QueueToFuncSubscription({
+              origin: queue,
+              subscriber: func,
+              vendorConfig: pullQueueSubscriptionDetailsFromEvent(pubSub)
+            }),
+            new TopicToQueueSubscription({
+              origin: topic,
+              subscriber: queue,
+              vendorConfig: topicSubDetails
+            })
+          );
+        // If a queue is not defined, we assume Topic -> Func
+        } else {
+          // Create the [Topic -> Func] subscription
+          this.subscriptions.push(
+            new TopicToFuncSubscription({
+              origin: topic,
+              subscriber: func,
+              vendorConfig: topicSubDetails
+            })
+          );
+        }
       });
-    };
-
-    this.variableReplaceTopics.forEach(createTopicIfNotExists);
-
-    const createQueueIfNotExists = (queueName, warn) => {
-      const queueLogicalId = this.naming.getActualQueueLogicalId(queueName);
-      // If the queue has already been created, that indicates it has
-      // multiple subscriptions, and we warn about competing polling.
-
-      if (pubSubResources[queueLogicalId]) {
-        if (warn) {
-          logWarning(`[PubSub] ${queueName} has multiple subscriber functions that will compete for messages. Ignore this warning if that is intentional.`);
-        }
-      } else {
-        pubSubResources[queueLogicalId] = this.generateQueueResource(queueName);
-      }
-    };
-
-    const allowQueueSubscription = (topicName, queueName) => {
-      const topicLogicalId = this.naming.getTopicLogicalId(topicName);
-      const queueLogicalId = this.naming.getActualQueueLogicalId(queueName);
-      const policy = pubSubResources.SNSToSQSPolicy || {
-        Type: 'AWS::SQS::QueuePolicy',
-          Properties: {
-            Queues: [],
-            PolicyDocument: {
-              Version: '2012-10-17',
-                Statement: [],
-              }
-            }
-      };
-      pubSubResources.SNSToSQSPolicy = policy;
-      if (!policy.Properties.Queues.find(q => q.Ref === queueLogicalId)) {
-        policy.Properties.Queues.push({Ref: queueLogicalId});
-      }
-
-      if (!policy.Properties.PolicyDocument.Statement.find(s => s.Condition.ArnEquals['aws:SourceArn'].Ref === topicLogicalId)) {
-        policy.Properties.PolicyDocument.Statement.push({
-          Effect: 'Allow',
-          Principal: '*',
-          Action: 'sqs:SendMessage',
-          Resource: '*',
-          Condition: {ArnEquals: {'aws:SourceArn': {Ref: topicLogicalId}}}
-        });
-      }
-    };
-
-    for (let funcKey in funcs) {
-      const func = funcs[funcKey];
-      let additionalEvents = [];
-
-      if (!func.events) {
-        func.events = [];
-      }
-
-      for (let idx = 0; idx < (func.events || []).length; idx++) {
-        let evt = func.events[idx],
-          topic,
-          queue = false,
-          topicSubscription,
-          subLogicalId;
-        // Skip events that are not pubSub
-        if (!evt || !evt.pubSub) {
-          continue;
-        }
-
-
-        // Pull pubsub config from event
-        const {pubSub} = evt;
-
-        // pubSub may be set to a string, in which case, we interpret
-        // that as the topic name (and assume no queue config)
-        if (typeof pubSub === 'string') {
-          topic = pubSub;
-        // topic may also be set to a string, in which case we interpret that
-        // as the topic name
-        } else {
-          queue = pubSub.queue;
-          if (typeof pubSub.topic === 'string') {
-            topic = pubSub.topic;
-          // topic may also be an object, in which case topic.name is the topic
-          // name, and we pull subscription from the topic object as well
-          } else if (pubSub.topic) {
-            topic = pubSub.topic.name;
-            topicSubscription = pubSub.topic.subscription;
-          }
-        }
-
-        if (!topic) {
-          throw Error(`No topic could be identified for pubSub subscription to ${funcKey}`);
-        }
-
-        createTopicIfNotExists(topic);
-
-        if (queue) {
-          let queueEvent = {},
-              queueSubscription,
-              queueName = `${funcKey}-queue`;
-
-          if (typeof queue !== 'string' && queue !== true) {
-            if (queue !== true) {
-              queueSubscription = queue.subscription;
-              if (queue.name) {
-                queueName = queue.name;
-              }
-            }
-          }
-
-          const queueLogicalId = this.naming.getActualQueueLogicalId(queueName);
-
-          // Generate the queue CFM resource if it doesn't already exist
-          createQueueIfNotExists(queueName);
-
-          // Create a "sqs" event for serverless
-          queueEvent.arn = {'Fn::GetAtt': [queueLogicalId, 'Arn']};
-          additionalEvents.push({sqs: queueEvent});
-
-          subLogicalId = this.naming.getQueueSubscriptionLogicalId(topic, queueName);
-          pubSubResources[subLogicalId] = this.generateQueueSubscription(topic, queueName, topicSubscription);
-
-          // If subscription properties are defined, add that to the resource
-          // that Serverless creates
-          if (queueSubscription) {
-            pubSubResources[this.naming.getQueueLogicalId(funcKey, queueName)] = {
-              Properties: queueSubscription
-            };
-          }
-          allowQueueSubscription(topic, queueName);
-        } else {
-          additionalEvents.push({sns: {arn: this.formatTopicArn(topic), topicName: this.namespaceResource(topic)}});
-        }
-
-      }
-      func.events.push(...additionalEvents);
-    }
-
-    // Create any orphaned topics
-    for (let topic in this.topics) {
-      createTopicIfNotExists(topic);
-    }
-
-    // Create any orphaned queues
-    for (let queue in this.queues) {
-      createQueueIfNotExists(queue, false);
-    }
-
-    Object.assign(this.slsCustomResources, pubSubResources);
-    return Promise.resolve();
+    });
   }
 
-  generateQueueSubscription(topic, queue, propOverrides) {
-    const props = {
-      TopicArn: this.formatTopicArn(topic),
-      Protocol: 'sqs',
-      Endpoint: {'Fn::GetAtt': [this.naming.getActualQueueLogicalId(queue), 'Arn']},
-    };
-    return {
-      Type: 'AWS::SNS::Subscription',
-      Properties: Object.assign(props, propOverrides)
-    };
+  /**
+   * Collects all pubSub resources that are defined in the custom config
+   */
+  collectPubSubResourcesFromCustomConfig(){
+    // Gets or creates all custom-defined topics
+    for (let topicName in this.customTopics) {
+      this.getTopic(topicName);
+    }
+    // Gets or creates all custom-defined queues
+    for (let queueName in this.customQueues) {
+      this.getQueue(queueName);
+    }
   }
 
 
   /**
-   * Generates a CFM AWS::SQS::Queue Resource from the queue name
-   * @param  {string} queue Queue name
-   * @return {object}       AWS::SQS::Queue Resource
+   * Generates sns or sqs events for all subscriptions in the stack
    */
-  generateQueueResource(queue) {
-    const propOverrides = this.queueConfig(queue);
-    const props = {
-      QueueName: this.namespaceResource(queue)
-    };
+  generateAdditionalEvents() {
+    this.subscriptions.forEach(sub => {
+      if (sub instanceof TopicToFuncSubscription) {
+        this.generateSNSEventFromSubscription(sub);
+      } else if (sub instanceof QueueToFuncSubscription) {
+        this.generateSQSEventFromSubscription(sub);
+      }
+    });
+  }
 
-    return {
+  /**
+   * Generates sqs events for a given subscription
+   * @param {QueueToFuncSubscription} sub
+   */
+  generateSQSEventFromSubscription(sub) {
+    const func = sub.subscriber;
+    const queueName = sub.origin.name;
+    func.events.push({sqs: {
+      arn: {
+        'Fn::GetAtt': [
+          this.naming.getActualQueueLogicalId(queueName),
+          'Arn'
+        ]
+      }
+    }});
+  }
+
+  /**
+   * Generates sns events for a given subscription
+   * @param {TopicToFuncSubscription} sub
+   */
+  generateSNSEventFromSubscription(sub) {
+    const func = sub.subscriber;
+    const topicName = sub.origin.name;
+    func.events.push({
+      sns: {
+        arn: this.formatTopicArn(sub.origin),
+        topicName: this.namespaceResource(topicName)
+      }
+    });
+  }
+
+  /**
+   * Generates all custom pubSub resources for the stack
+   */
+  generateAllCustomResources() {
+    this.queues.forEach(q => this.generateSQSResource(q));
+    this.topics.forEach(t => this.generateSNSResource(t));
+    this.subscriptions.forEach(s =>
+      s instanceof QueueToFuncSubscription
+        ? this.generateSQSLambdaSubscription(s)
+        : this.generateSNSSubscription(s)
+      );
+  }
+
+
+  /**
+   * Generates the AWS::SQS::Queue resource for a given Queue
+   * @param  {Queue} queue
+   */
+  generateSQSResource(queue) {
+    const queueLogicalId = this.naming.getActualQueueLogicalId(queue.name);
+    const props = {
+      QueueName: this.namespaceResource(queue.name)
+    };
+    this.slsCustomResources[queueLogicalId] = {
       Type: 'AWS::SQS::Queue',
-      Properties: Object.assign(props, propOverrides),
+      Properties: Object.assign(props, queue.vendorConfig)
     };
-
   }
 
   /**
-   * Generates a topic resource given the topic name
-   * @param  {string} topic name of the topic
-   * @return {object}       Cloudformation AWS::SNS::Topic
+   * Generates the AWS::SNS::Topic resource for a given Topic
+   * @param  {Topic} topic
    */
-  generateTopicResource(topic) {
-    const propOverrides = this.topicConfig(topic);
+  generateSNSResource(topic) {
+    const logicalId = this.naming.getTopicLogicalId(topic.name);
     const props = {
-      TopicName: this.namespaceResource(topic)
+      TopicName: this.namespaceResource(topic.name)
     };
-
-    return {
+    this.slsCustomResources[logicalId] = {
       Type: 'AWS::SNS::Topic',
-      Properties: Object.assign(props, propOverrides),
+      Properties: Object.assign(props, topic.vendorConfig),
+    };
+  }
+
+  /**
+   * Generates the AWS::SNS::Subscription resource for a given Subscription
+   * @param  {Topic} topic
+   */
+  generateSNSSubscription(sub) {
+    const logicalId = sub instanceof TopicToFuncSubscription
+      ? this.naming.getLambdaSnsSubscriptionLogicalId(
+        sub.subscriber.name,
+        sub.origin.name
+      )
+      : this.naming.getQueueSubscriptionLogicalId(
+        sub.origin.name,
+        sub.subscriber.name,
+      );
+
+    const props = {
+      TopicArn: this.formatTopicArn(sub.origin),
+      Protocol: sub instanceof TopicToFuncSubscription ? 'lambda' : 'sqs',
+      Endpoint:
+        {
+          'Fn::GetAtt': [
+            sub instanceof TopicToFuncSubscription
+              ? this.naming.getLambdaLogicalId(sub.subscriber.name)
+              : this.naming.getActualQueueLogicalId(sub.subscriber.name),
+            'Arn'
+          ]
+        },
+    };
+    this.slsCustomResources[logicalId] = {
+      Type: 'AWS::SNS::Subscription',
+      Properties: Object.assign(props, sub.vendorConfig)
+    };
+  }
+
+  /**
+   * Generates the AWS::Lambda::EventSourceMapping resource for a given
+   * [Queue -> Func] subscription
+   * @param  {sub} QueueToFuncSubscription
+   */
+  generateSQSLambdaSubscription(sub) {
+    const logicalId = this.naming.getQueueLogicalId(
+      sub.subscriber.name,
+      sub.origin.name
+    );
+
+    const props = {
+      EventSourceArn: {
+        'Fn::GetAtt': [
+          this.naming.getActualQueueLogicalId(sub.origin.name),
+          'Arn'
+        ]
+      },
+      FunctionName: {
+        Ref: this.naming.getLambdaLogicalId(sub.subscriber.name)
+      },
+    };
+    this.slsCustomResources[logicalId] = {
+      Type: 'AWS::Lambda::EventSourceMapping',
+      Properties: Object.assign(props, sub.vendorConfig)
     };
   }
 
@@ -273,7 +426,7 @@ class ServerlessPluginPubSub {
    * Gets the topics defined in the plugin configuration
    * @return {object} mapping of topic name and CFM resource
    */
-  get topics () {
+  get customTopics () {
     return (this.config && this.config.topics) || {};
   }
 
@@ -281,27 +434,10 @@ class ServerlessPluginPubSub {
    * Gets the queues defined in the plugin configuration
    * @return {object} mapping of queue name and CFM resource
    */
-  get queues () {
+  get customQueues () {
     return (this.config && this.config.queues) || {};
   }
 
-  /**
-   * Gets the configuration for a specific pubSub topic by name
-   * @param  {string} topicName
-   * @return {object}           Cloudformation AWS::SNS::Topic
-   */
-  topicConfig(topicName) {
-    return this.topics[topicName] || {};
-  }
-
-  /**
-   * Gets the configuration for a specific pubSub queue by name
-   * @param  {string} topicName
-   * @return {object}           Cloudformation AWS::SQS::Queue
-   */
-  queueConfig(queueName) {
-    return this.queues[queueName] || {};
-  }
 
   /**
    * The custom resources defined for the serverless stack
@@ -319,7 +455,7 @@ class ServerlessPluginPubSub {
   /**
    * Namespaces a resource by prefixing it with the service and stage
    * @param {string} resourceName Name of the resource
-   * @return {string}]
+   * @return {string}
    */
   namespaceResource(resourceName) {
     const serviceName = this.serverless.service.service;
@@ -333,7 +469,6 @@ class ServerlessPluginPubSub {
    * @return {object}       Cloudformation join expression that builds the Arn
    */
   formatTopicArn(topic) {
-    const topicResource = this.generateTopicResource(topic);
     return {
       'Fn::Join': [
         ':', [
@@ -341,13 +476,12 @@ class ServerlessPluginPubSub {
           {Ref: 'AWS::Partition'},
           'sns',
           {Ref: 'AWS::Region'}, {Ref: 'AWS::AccountId'},
-          topicResource.Properties.TopicName
+          this.namespaceResource(topic.name)
         ]
       ]
 
     };
   }
-
 
   /**
    * Injects the pubSubTopic replacement syntax into the serverless variable
@@ -358,8 +492,8 @@ class ServerlessPluginPubSub {
     const self = this;
     this.serverless.variables.getValueFromSource = function (variableString) {
       if (variableString.match(pubSubTopicSyntax)){
-        const topic = variableString.replace(pubSubTopicSyntax, '');
-        self.variableReplaceTopics.push(topic);
+        const topicName = variableString.replace(pubSubTopicSyntax, '');
+        const topic = self.getTopic(topicName);
         return self.formatTopicArn(topic);
       }
       return originalMethod(variableString);
@@ -367,16 +501,54 @@ class ServerlessPluginPubSub {
   }
 
   /**
-   * Gets the iam role statements from config
-   * @return {object} iam role statements
+   * Allows lambda to publish to the topics in the stack
    */
-  get iamRoleStatements() {
-    if (!this.serverless.service.provider.iamRoleStatements) {
-      this.serverless.service.provider.iamRoleStatements = [];
-    }
-    return this.serverless.service.provider.iamRoleStatements;
+  allowLambdasToPublishSNS() {
+    const statements = this.serverless.service.provider.iamRoleStatements || [];
+    this.serverless.service.provider.iamRoleStatements = statements;
+
+    statements.push(
+      ...this.topics.map(t => ({
+        Effect: 'Allow',
+        Action: ['sns:Publish'],
+        Resource: this.formatTopicArn(t)
+      }))
+    );
   }
 
+  /**
+   * Allows SQS queues to poll SNS topics
+   */
+  allowSNSToSQSSubscriptions() {
+    const queueArns = unique(this.queues, (q) => q.name)
+      .map(q => ({Ref: this.naming.getActualQueueLogicalId(q.name)}));
+
+    const statements = unique(this.topics, (t) => t.name)
+      .map(t => ({
+        Effect: 'Allow',
+        Principal: '*',
+        Action: 'sqs:SendMessage',
+        Resource: '*',
+        Condition: {
+          ArnEquals: {
+            'aws:SourceArn': {Ref: this.naming.getTopicLogicalId(t.name)}
+          }
+        }
+      }));
+
+    const policy = {
+      Type: 'AWS::SQS::QueuePolicy',
+      Properties: {
+        Queues: queueArns,
+        PolicyDocument: {
+          Version: '2012-10-17',
+          Statement: statements,
+        }
+      }
+    };
+
+    this.slsCustomResources.SNSToSQSPolicy = policy;
+  }
 }
 
 
