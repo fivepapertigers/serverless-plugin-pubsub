@@ -106,10 +106,10 @@ describe('config getter', () => {
 
 });
 
-describe('topics getter', () => {
+describe('customTopics getter', () => {
 
   test('should get the custom pubSub topics config', () => {
-    expect(plugin.topics).toEqual({
+    expect(plugin.customTopics).toEqual({
       'foo-happened': {DisplayName: 'FooDefinitelyHappened'},
       'baz-happened': {}
     });
@@ -117,147 +117,42 @@ describe('topics getter', () => {
 
   test('should get an empty object when no config', () => {
     delete plugin.serverless.service.custom;
-    expect(plugin.topics).toEqual({});
+    expect(plugin.customTopics).toEqual({});
   });
 
 });
 
-describe('queues getter', () => {
+describe('customQueues getter', () => {
 
   test('should get the custom pubSub queues config', () => {
-    expect(plugin.queues).toEqual({
+    expect(plugin.customQueues).toEqual({
       'bar-queue': {DelaySeconds: 5},
     });
   });
 
   test('should get an empty object when no config', () => {
     delete plugin.serverless.service.custom;
-    expect(plugin.queues).toEqual({});
+    expect(plugin.customQueues).toEqual({});
   });
 
 });
 
-describe('topicConfig method', () => {
+describe('collectPubSubResourcesFromFunctions', () => {
 
-  test('should get the custom pubSub config for the topic', () => {
-    expect(plugin.topicConfig('foo-happened')).toEqual({
-      DisplayName: 'FooDefinitelyHappened',
-    });
+  test('should get all resources', () => {
+    plugin.collectPubSubResourcesFromFunctions();
+    expect(plugin.topics.length).toEqual(1);
+    expect(plugin.topics[0].name).toEqual('foo-happened');
+    expect(plugin.queues.length).toEqual(1);
+    expect(plugin.queues[0].name).toEqual('bar-queue');
+    expect(plugin.subscriptions.length).toEqual(3);
   });
-
-  test('should get an empty object when no config', () => {
-    delete plugin.serverless.service.custom;
-    expect(plugin.topicConfig('foo-happened')).toEqual({});
-  });
-
-});
-
-describe('queueConfig method', () => {
-
-  test('should get the custom pubSub config for the queue', () => {
-    expect(plugin.queueConfig('bar-queue')).toEqual({
-      DelaySeconds: 5
-    });
-  });
-
-  test('should get an empty object when no config', () => {
-    delete plugin.serverless.service.custom;
-    expect(plugin.queueConfig('bar-queue')).toEqual({});
-  });
-
-});
-
-describe('generateTopicResource method', () => {
-
-  test('should generate a new topic resource', () => {
-    expect(plugin.generateTopicResource('bar-happened')).toEqual({
-      Type: 'AWS::SNS::Topic',
-      Properties: {
-        TopicName: 'serviceName-stageName-bar-happened'
-      }
-    });
-  });
-
-  test('should override defaults with custom config', () => {
-    expect(plugin.generateTopicResource('foo-happened')).toEqual({
-      Type: 'AWS::SNS::Topic',
-      Properties: {
-        TopicName: 'serviceName-stageName-foo-happened',
-        DisplayName: 'FooDefinitelyHappened',
-      }
-    });
-  });
-
-});
-
-describe('generateQueueResource method', () => {
-
-  test('should generate a new queue resource', () => {
-    expect(plugin.generateQueueResource('default-queue')).toEqual({
-      Type: 'AWS::SQS::Queue',
-      Properties: {
-        QueueName: 'serviceName-stageName-default-queue'
-      }
-    });
-  });
-
-  test('should override defaults with custom config', () => {
-    expect(plugin.generateQueueResource('bar-queue')).toEqual({
-      Type: 'AWS::SQS::Queue',
-      Properties: {
-        QueueName: 'serviceName-stageName-bar-queue',
-        DelaySeconds: 5,
-      }
-    });
-  });
-
-});
-
-describe('generateQueueSubscription method', () => {
-
-  test('should generate a sns to sqs subscription resource', () => {
-    expect(plugin.generateQueueSubscription('foo-happened', 'bar-queue')).toEqual({
-      Type: 'AWS::SNS::Subscription',
-      Properties: {
-        TopicArn: {
-          'Fn::Join': [
-            ':', [
-              'arn', {Ref: 'AWS::Partition'}, 'sns', {Ref: 'AWS::Region'}, {Ref: 'AWS::AccountId'},
-              'serviceName-stageName-foo-happened'
-            ]
-          ]
-        },
-        Protocol: 'sqs',
-        Endpoint: {'Fn::GetAtt': ['SQSQueuebarqueue', 'Arn']}
-      }
-    });
-  });
-
-  test('should generate a sns to sqs subscription resource with overrides', () => {
-    expect(plugin.generateQueueSubscription('foo-happened', 'bar-queue', {RawMessageDelivery: true})).toEqual({
-      Type: 'AWS::SNS::Subscription',
-      Properties: {
-        TopicArn: {
-          'Fn::Join': [
-            ':', [
-              'arn', {Ref: 'AWS::Partition'}, 'sns', {Ref: 'AWS::Region'}, {Ref: 'AWS::AccountId'},
-              'serviceName-stageName-foo-happened'
-            ]
-          ]
-        },
-        Protocol: 'sqs',
-        RawMessageDelivery: true,
-        Endpoint: {'Fn::GetAtt': ['SQSQueuebarqueue', 'Arn']}
-      }
-    });
-  });
-
 });
 
 
 describe('generateResources method', () => {
   test('should generate all resources', async() => {
-    await plugin.generateResources();
+    await plugin.hooks['after:package:initialize']();
     expect(plugin.slsCustomResources).toEqual({
       SNSToSQSPolicy: {
         Properties: {
@@ -269,6 +164,19 @@ describe('generateResources method', () => {
                   ArnEquals: {
                     'aws:SourceArn': {
                       Ref: 'SNSTopicfoohappened'
+                    }
+                  }
+                },
+                Effect: 'Allow',
+                Principal: '*',
+                Resource: '*'
+              },
+              {
+                Action: 'sqs:SendMessage',
+                Condition: {
+                  ArnEquals: {
+                    'aws:SourceArn': {
+                      Ref: 'SNSTopicbazhappened'
                     }
                   }
                 },
@@ -328,9 +236,45 @@ describe('generateResources method', () => {
         Type: 'AWS::SNS::Subscription'
       },
       barqueueTobar: {
+        Type: 'AWS::Lambda::EventSourceMapping',
         Properties: {
           BatchSize: 1,
+          EventSourceArn: {
+           'Fn::GetAtt': ['SQSQueuebarqueue', 'Arn'],
+          },
+          FunctionName: {Ref: 'barLogicalID'}
         },
+      },
+      foohappenedTobaz: {
+        Properties: {
+          Endpoint: {
+            'Fn::GetAtt': [
+              'bazLogicalID',
+              'Arn',
+            ],
+          },
+          Protocol: 'lambda',
+          TopicArn: {
+            'Fn::Join': [
+              ':',
+              [
+                'arn',
+                {
+                  Ref: 'AWS::Partition',
+                },
+                'sns',
+                {
+                  Ref: 'AWS::Region',
+                },
+                {
+                  Ref: 'AWS::AccountId',
+                },
+                'serviceName-stageName-foo-happened',
+              ],
+            ],
+          },
+        },
+        Type: 'AWS::SNS::Subscription',
       },
     });
   });
