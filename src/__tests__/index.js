@@ -61,6 +61,11 @@ beforeEach(() => {
           },
           queues: {
             'bar-queue': {DelaySeconds: 5},
+          },
+          defaults: {
+            queues: {
+              VisibilityTimeout: 4000,
+            },
           }
         },
       },
@@ -95,6 +100,11 @@ describe('config getter', () => {
       },
       queues: {
         'bar-queue': {DelaySeconds: 5},
+      },
+      defaults: {
+        queues: {
+          VisibilityTimeout: 4000,
+        },
       }
     });
   });
@@ -211,7 +221,8 @@ describe('generateResources method', () => {
       SQSQueuebarqueue: {
         Properties: {
           DelaySeconds: 5,
-          QueueName: 'serviceName-stageName-bar-queue'
+          QueueName: 'serviceName-stageName-bar-queue',
+          VisibilityTimeout: 4000,
         },
         Type: 'AWS::SQS::Queue'
       },
