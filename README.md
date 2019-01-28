@@ -161,6 +161,24 @@ functions:
               BatchSize: 1
 ```
 
+It is often the case that you want to set default values for Cloudformation configuration across the entire service. You can do that using `custom.pubSub.defaults.(queues|topics|queueSubscriptions|topicSubscriptions)`. Note that defaults will be overwritten if defined at the resource level.
+
+```
+custom:
+  pubSub:
+    defaults:
+      topics:
+        KmsMasterKeyId: my-key-id
+      queues:
+        MessageRetentionPeriod: 60
+      queueSubscriptions:
+        BatchSize: 1
+      topicSubscriptions:
+        DeliveryPolicy:
+          throttlePolicy:
+            maxReceivesPerSecond: 3
+```
+
 
 ## Contributing
 

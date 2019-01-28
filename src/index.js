@@ -329,7 +329,9 @@ class ServerlessPluginPubSub {
     };
     this.slsCustomResources[queueLogicalId] = {
       Type: 'AWS::SQS::Queue',
-      Properties: Object.assign(props, queue.vendorConfig)
+      Properties: Object.assign(
+        {}, this.queueDefaults, props, queue.vendorConfig
+      )
     };
   }
 
@@ -344,7 +346,9 @@ class ServerlessPluginPubSub {
     };
     this.slsCustomResources[logicalId] = {
       Type: 'AWS::SNS::Topic',
-      Properties: Object.assign(props, topic.vendorConfig),
+      Properties: Object.assign(
+        {}, this.topicDefaults, props, topic.vendorConfig
+      ),
     };
   }
 
@@ -378,7 +382,9 @@ class ServerlessPluginPubSub {
     };
     this.slsCustomResources[logicalId] = {
       Type: 'AWS::SNS::Subscription',
-      Properties: Object.assign(props, sub.vendorConfig)
+      Properties: Object.assign(
+        {}, this.topicSubscriptionDefaults, props, sub.vendorConfig
+      )
     };
   }
 
@@ -409,7 +415,9 @@ class ServerlessPluginPubSub {
     };
     this.slsCustomResources[logicalId] = {
       Type: 'AWS::Lambda::EventSourceMapping',
-      Properties: Object.assign(props, sub.vendorConfig)
+      Properties: Object.assign(
+        {}, this.queueSubscriptionDefaults, props, sub.vendorConfig
+      )
     };
   }
 
@@ -439,6 +447,27 @@ class ServerlessPluginPubSub {
    */
   get customQueues () {
     return (this.config && this.config.queues) || {};
+  }
+
+
+  get topicDefaults() {
+    return this.defaults.topics || {};
+  }
+
+  get queueDefaults() {
+    return this.defaults.queues || {};
+  }
+
+  get topicSubscriptionDefaults() {
+    return this.defaults.topicSubscriptions || {};
+  }
+
+  get queueSubscriptionDefaults() {
+    return this.defaults.queueSubscriptions || {};
+  }
+
+  get defaults() {
+    return this.config.defaults || {};
   }
 
 
