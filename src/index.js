@@ -401,7 +401,10 @@ class ServerlessPluginPubSub {
         ]
       },
       FunctionName: {
-        Ref: this.naming.getLambdaLogicalId(sub.subscriber.name)
+        'Fn::GetAtt': [
+          this.naming.getLambdaLogicalId(sub.subscriber.name),
+          'Arn'
+        ]
       },
     };
     this.slsCustomResources[logicalId] = {

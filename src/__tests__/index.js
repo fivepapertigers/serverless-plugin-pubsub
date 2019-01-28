@@ -242,7 +242,9 @@ describe('generateResources method', () => {
           EventSourceArn: {
            'Fn::GetAtt': ['SQSQueuebarqueue', 'Arn'],
           },
-          FunctionName: {Ref: 'barLogicalID'}
+          FunctionName: {
+            'Fn::GetAtt': ['barLogicalID', 'Arn']
+          }
         },
       },
       foohappenedTobaz: {
