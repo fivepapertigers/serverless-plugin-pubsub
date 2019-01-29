@@ -246,7 +246,7 @@ describe('generateResources method', () => {
         },
         Type: 'AWS::SNS::Subscription'
       },
-      barqueueTobar: {
+      SQSQueuebarqueueTobar: {
         Type: 'AWS::Lambda::EventSourceMapping',
         Properties: {
           BatchSize: 1,
