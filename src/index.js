@@ -396,7 +396,7 @@ class ServerlessPluginPubSub {
   generateSQSLambdaSubscription(sub) {
     const logicalId = this.naming.getQueueLogicalId(
       sub.subscriber.name,
-      sub.origin.name
+      this.naming.getActualQueueLogicalId(sub.origin.name),
     );
 
     const props = {
