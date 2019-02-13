@@ -552,6 +552,17 @@ class ServerlessPluginPubSub {
    * Allows SQS queues to poll SNS topics
    */
   allowSNSToSQSSubscriptions() {
+    const policy = this.slsCustomResources.SNSToSQSPolicy || {
+      Type: 'AWS::SQS::QueuePolicy',
+      Properties: {
+        Queues: [],
+        PolicyDocument: {
+          Version: '2012-10-17',
+          Statement: [],
+        }
+      }
+    };
+
     const queueArns = unique(this.queues, (q) => q.name)
       .map(q => ({Ref: this.naming.getActualQueueLogicalId(q.name)}));
 
@@ -568,16 +579,8 @@ class ServerlessPluginPubSub {
         }
       }));
 
-    const policy = {
-      Type: 'AWS::SQS::QueuePolicy',
-      Properties: {
-        Queues: queueArns,
-        PolicyDocument: {
-          Version: '2012-10-17',
-          Statement: statements,
-        }
-      }
-    };
+    policy.Properties.Queues = policy.Properties.Queues.concat(queueArns);
+    policy.Properties.PolicyDocument.Statement = policy.Properties.PolicyDocument.Statement.concat(statements);
 
     this.slsCustomResources.SNSToSQSPolicy = policy;
   }
