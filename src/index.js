@@ -12,6 +12,7 @@ const {
   TopicToQueueSubscription, TopicToFuncSubscription
 } = require('./models');
 
+const logger = require('./logger');
 
 function unique(iterable, selector) {
   let results = new Set();
@@ -112,6 +113,7 @@ class ServerlessPluginPubSub {
     this.options = options;
     this.naming = this.serverless.getProvider('aws').naming;
 
+    logger.init(this.serverless);
     // Note: getQueueLogicalId gets the event source mapping logical Id
     this.naming.getActualQueueLogicalId = (queueName) =>
         `SQSQueue${this.naming.normalizeNameToAlphaNumericOnly(queueName)}`;
