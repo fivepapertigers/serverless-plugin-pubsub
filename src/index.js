@@ -5,12 +5,17 @@
 
 const Promise = require('bluebird');
 
-const pubSubTopicSyntax = RegExp(/^pubSubTopic:/g);
 
+const Server = require('./offline');
 const {
   Func, Topic, Queue, QueueToFuncSubscription,
   TopicToQueueSubscription, TopicToFuncSubscription
 } = require('./models');
+
+const logger = require('./logger');
+
+const pubSubTopicSyntax = RegExp(/^pubSubTopic:/g);
+
 
 
 function unique(iterable, selector) {
@@ -112,6 +117,15 @@ class ServerlessPluginPubSub {
     this.options = options;
     this.naming = this.serverless.getProvider('aws').naming;
 
+    logger.init(this.serverless);
+    Server.config(this.offlineConfig);
+
+    const cmd = this.serverless.processedInput.commands.join(' ');
+    if (cmd === 'invoke local' || cmd === 'pubSub offline') {
+      this.offlineMode = true;
+      this.injectOfflineEnv();
+    }
+
     // Note: getQueueLogicalId gets the event source mapping logical Id
     this.naming.getActualQueueLogicalId = (queueName) =>
         `SQSQueue${this.naming.normalizeNameToAlphaNumericOnly(queueName)}`;
@@ -119,7 +133,20 @@ class ServerlessPluginPubSub {
     this.naming.getQueueSubscriptionLogicalId = (topicName, queueName) =>
         `${this.naming.getActualQueueLogicalId(queueName)}To${this.naming.getTopicLogicalId(topicName)}Subscription`;
 
-    this.commands = {};
+    this.commands = {
+      pubSub: {
+        usage: 'Pubsub Commands',
+        lifecycleEvents: [
+          'pubSub'
+        ],
+        commands: {
+          offline: {
+            usage: 'Run pubSub topics locally',
+            lifecycleEvents: ['offline']
+          }
+        }
+      }
+    };
     this.hooks = {
       'after:package:initialize':
         () => {
@@ -131,6 +158,11 @@ class ServerlessPluginPubSub {
           this.allowSNSToSQSSubscriptions();
           return Promise.resolve();
         },
+      'pubSub:offline:offline': () => {
+        this.collectPubSubResourcesFromFunctions();
+        this.collectPubSubResourcesFromCustomConfig();
+        return this.startServer();
+      }
     };
 
 
@@ -472,6 +504,14 @@ class ServerlessPluginPubSub {
 
 
   /**
+   * The offline configuration settings
+   * @return {[type]} [description]
+   */
+  get offlineConfig() {
+    return this.config.offline || {};
+  }
+
+  /**
    * The custom resources defined for the serverless stack
    * @return {object} AWS Cloudformation mapping
    */
@@ -490,9 +530,18 @@ class ServerlessPluginPubSub {
    * @return {string}
    */
   namespaceResource(resourceName) {
+    return `${this.stackPrefix}${resourceName}`;
+  }
+
+  /**
+   * The prefix for resources in the stack
+   */
+
+  get stackPrefix() {
     const serviceName = this.serverless.service.service;
     const stage = this.serverless.getProvider('aws').getStage();
-    return `${serviceName}-${stage}-${resourceName}`;
+    return `${serviceName}-${stage}-`;
+
   }
 
   /**
@@ -501,6 +550,9 @@ class ServerlessPluginPubSub {
    * @return {object}       Cloudformation join expression that builds the Arn
    */
   formatTopicArn(topic) {
+    if (this.offlineMode) {
+      return `arn:aws:sns:us-east-1:1234567890123:${this.namespaceResource(topic.name)}`;
+    }
     return {
       'Fn::Join': [
         ':', [
@@ -583,6 +635,24 @@ class ServerlessPluginPubSub {
     policy.Properties.PolicyDocument.Statement = policy.Properties.PolicyDocument.Statement.concat(statements);
 
     this.slsCustomResources.SNSToSQSPolicy = policy;
+  }
+
+  startServer() {
+    return new Promise(() => {
+      Server.start(this.topics, this.stackPrefix);
+      this.subscriptions.forEach(subscription => subscription.subscribe());
+    });
+  }
+
+  injectOfflineEnv() {
+    let env = [];
+    if (Array.isArray(this.options.e)) {
+      env = this.options.e;
+    } else if (this.options.e) {
+      env.push(this.options.e);
+    }
+    env.push(Server.endpointUrlEnvString);
+    this.options.e = env;
   }
 }
 

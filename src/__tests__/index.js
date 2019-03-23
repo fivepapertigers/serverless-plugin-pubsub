@@ -9,6 +9,9 @@ const normalizeNameToAlphaNumericOnly = (name) => name.replace('-', '');
 
 beforeEach(() => {
   sls = {
+    processedInput: {
+      commands: [],
+    },
     service: {
       service: 'serviceName',
       functions: {

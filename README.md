@@ -25,7 +25,7 @@ With those limitations in mind, this plugin aims to provide the following for th
 - Syntax that blends in seamlessly by following commonly used Serverless config patterns
 - A high-degree of customization, when desired, so that the developer can take advantage of all the features AWS has to offer
 - Automatic permissioning that aims for least-privelege topic/queue/function access (no wild-carding!)
-- A local runtime for executing pub/sub functions (coming soon...)
+- A [local runtime](#offline-mode) for executing pub/sub functions
 
 ## Installation
 
@@ -98,7 +98,9 @@ In the Lambda runtime, this will resolve as the SNS Topic Arn. The following is 
 
 ```javascript
 //handler.js
-const { SNS } = require('aws-sdk');
+const AWS = require('aws-sdk');
+
+const SNS = new AWS.SNS();
 
 module.exports = {
   handler: async () => {
@@ -178,6 +180,30 @@ custom:
           throttlePolicy:
             maxReceivesPerSecond: 3
 ```
+
+## Offline Mode
+
+This plugin features an offline mode, which spins up a local server for testing your integration offline:
+
+```bash
+serverless pubSub offline
+```
+
+The command setups up a mock SNS server to receive SNS::Publish requests and directs them to the configured pubSub functions using `serverless invoke local`.
+
+Additionally, when the plugin is installed, the `SNS_ENDPOINT_URL` variable will be injected into the runtime environment for publishing to the mock SNS server. You can use this to direct an AWS SDK to use this SNS endpoint instead of the real one.
+
+```javascript
+const AWS = require('aws-sdk');
+
+const SNS_ENDPOINT_URL = process.env.SNS_ENDPOINT_URL || undefined;
+const SNS = new AWS.SNS({endpoint: SNS_ENDPOINT_URL});
+```
+
+The following options are configurable under `custom.pubSub.offline`:
+
+- `host` the host name of the server _(default: localhost)_
+- `port` the port where the server should be exposed _(default: 3100)_
 
 
 ## Contributing
