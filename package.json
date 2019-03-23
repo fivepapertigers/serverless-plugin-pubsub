@@ -24,5 +24,10 @@
     "eslint-plugin-jest": "^22.1.2",
     "jest": "^23.6.0",
     "serverless": "^1.35.1"
+  },
+  "dependencies": {
+    "body-parser": "^1.18.3",
+    "express": "^4.16.4",
+    "pubsub-js": "^1.7.0"
   }
 }
