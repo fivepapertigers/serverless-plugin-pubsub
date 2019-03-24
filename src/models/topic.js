@@ -28,7 +28,7 @@ class Topic {
   }
 
   formatMessageDetails(messageId, message) {
-    return JSON.stringify({
+    return {
       SignatureVersion: '1',
       Timestamp: (new Date()).toISOString(),
       Signature: 'EXAMPLE',
@@ -40,7 +40,7 @@ class Topic {
       UnsubscribeUrl: 'EXAMPLE',
       TopicArn: `arn:aws:sns:us-east-1:1234567890123:${this.name}`,
       Subject: 'TestInvoke'
-    });
+    };
   }
 
   log(message) {
