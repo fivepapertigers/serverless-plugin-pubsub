@@ -206,7 +206,9 @@ class ServerlessPluginPubSub {
    */
   getFunc(funcName, funcConfig) {
     return getOrSet(funcName, this.funcs, () => new Func({
-      name: funcName, serverlessConfig: funcConfig
+      name: funcName,
+      invokeOpts: this.options,
+      serverlessConfig: funcConfig
     }));
   }
 

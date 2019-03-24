@@ -6,13 +6,15 @@
 
 const execFile = require('child_process').execFile;
 const logger = require('../logger');
+const helpers = require('../helpers');
 const os = require('os');
 
 class Func {
 
-  constructor({name, serverlessConfig}) {
+  constructor({name, invokeOpts, serverlessConfig}) {
     this.name = name;
     this.serverlessConfig = serverlessConfig;
+    this.invokeOpts = invokeOpts;
     this.type = 'function';
   }
 
@@ -24,18 +26,19 @@ class Func {
     return this.events.filter(({pubSub}) => pubSub);
   }
 
-  execute(data, opts = {}) {
-    const args = [
-      'invoke',
-      'local',
+  execute(data) {
+    let args = ['invoke', 'local'];
+    if (this.invokeOpts) {
+      args = args.concat(helpers.formatCLIOptions(this.invokeOpts));
+    }
+    args = args.concat([
       '-f',
       this.name,
       '-e',
       'SNS_ENDPOINT_URL=http://localhost:3100',
       '-d',
       data,
-      ...Object.keys(opts).reduce((res, k) => [...res, `--${k}`, opts[k]], [])
-    ];
+    ]);
 
     this.log(`Invoking with ${data}`);
     execFile('sls', args, (err, stdout, stderr) => {
