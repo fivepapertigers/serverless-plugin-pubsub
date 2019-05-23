@@ -402,7 +402,7 @@ class ServerlessPluginPubSub {
       );
 
     const props = {
-      TopicArn: this.formatTopicArn(sub.origin),
+      TopicArn: {Ref: this.naming.getTopicLogicalId(sub.origin.name)},
       Protocol: sub instanceof TopicToFuncSubscription ? 'lambda' : 'sqs',
       Endpoint:
         {

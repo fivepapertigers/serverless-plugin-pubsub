@@ -244,7 +244,7 @@ describe('generateResources method', () => {
           },
           Protocol: 'sqs',
           TopicArn: {
-            'Fn::Join': [':', ['arn', {Ref: 'AWS::Partition'}, 'sns', {Ref: 'AWS::Region'}, {Ref: 'AWS::AccountId'}, 'serviceName-stageName-foo-happened']]
+            Ref: 'SNSTopicfoohappened',
           }
         },
         Type: 'AWS::SNS::Subscription'
@@ -271,23 +271,7 @@ describe('generateResources method', () => {
           },
           Protocol: 'lambda',
           TopicArn: {
-            'Fn::Join': [
-              ':',
-              [
-                'arn',
-                {
-                  Ref: 'AWS::Partition',
-                },
-                'sns',
-                {
-                  Ref: 'AWS::Region',
-                },
-                {
-                  Ref: 'AWS::AccountId',
-                },
-                'serviceName-stageName-foo-happened',
-              ],
-            ],
+            Ref: 'SNSTopicfoohappened',
           },
         },
         Type: 'AWS::SNS::Subscription',
