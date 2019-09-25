@@ -3,9 +3,6 @@
  */
 
 
-const Promise = require('bluebird');
-
-
 const Server = require('./offline');
 const {
   Func, Topic, Queue, QueueToFuncSubscription,
