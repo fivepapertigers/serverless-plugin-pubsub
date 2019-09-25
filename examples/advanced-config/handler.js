@@ -14,4 +14,5 @@ module.exports = {
   foo: async () => await publish({foo: true}),
   bar: async () => await publish({bar: true}),
   baz: async () => await publish({baz: true}),
+  handleExtEvent: async (event) => console.log(event)
 };

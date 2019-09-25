@@ -48,6 +48,23 @@ functions:
     environment:
       PUBLISH_TOPIC: ${pubSubTopic:baz-happened}
 
+  handleExtEvent:
+    handler: handler.handleExtEvent
+    events:
+      - pubSub:
+          topic:
+            name: external-event-happened
+            arn:
+              Fn::Join:
+                - ':'
+                - - arn
+                  - aws
+                  - sns
+                  - Ref: 'AWS::Region'
+                  - Ref: 'AWS::AccountId'
+                  - external-event-happened
+          queue: true
+
 custom:
   pubSub:
     topics:

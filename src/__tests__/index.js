@@ -5,7 +5,7 @@ let sls;
 let options;
 let plugin;
 
-const normalizeNameToAlphaNumericOnly = (name) => name.replace('-', '');
+const normalizeNameToAlphaNumericOnly = (name) => name.replace(/-/g, '');
 
 beforeEach(() => {
   sls = {
@@ -54,6 +54,18 @@ beforeEach(() => {
             pubSub: 'foo-happened'
           }]
         },
+        handleExtEvt: {
+          handler: 'module.handleExtEvt',
+          events: [{
+            pubSub: {
+              topic: {
+                name: 'some-external-topic',
+                arn: 'arn:aws:sns:us-east-1:10101010:some-external-topic',
+              },
+              queue: true
+            }
+          }]
+        }
       },
       resources: {},
       custom: {
@@ -154,11 +166,13 @@ describe('collectPubSubResourcesFromFunctions', () => {
 
   test('should get all resources', () => {
     plugin.collectPubSubResourcesFromFunctions();
-    expect(plugin.topics.length).toEqual(1);
+    expect(plugin.topics.length).toEqual(2);
     expect(plugin.topics[0].name).toEqual('foo-happened');
-    expect(plugin.queues.length).toEqual(1);
+    expect(plugin.topics[1].name).toEqual('some-external-topic');
+    expect(plugin.queues.length).toEqual(2);
     expect(plugin.queues[0].name).toEqual('bar-queue');
-    expect(plugin.subscriptions.length).toEqual(3);
+    expect(plugin.queues[1].name).toEqual('handleExtEvt-queue');
+    expect(plugin.subscriptions.length).toEqual(5);
   });
 });
 
@@ -188,6 +202,17 @@ describe('generateResources method', () => {
                 Action: 'sqs:SendMessage',
                 Condition: {
                   ArnEquals: {
+                    'aws:SourceArn': 'arn:aws:sns:us-east-1:10101010:some-external-topic'
+                  }
+                },
+                Effect: 'Allow',
+                Principal: '*',
+                Resource: '*'
+              },
+              {
+                Action: 'sqs:SendMessage',
+                Condition: {
+                  ArnEquals: {
                     'aws:SourceArn': {
                       Ref: 'SNSTopicbazhappened'
                     }
@@ -203,6 +228,9 @@ describe('generateResources method', () => {
           Queues: [
             {
               Ref: 'SQSQueuebarqueue'
+            },
+            {
+              Ref: 'SQSQueuehandleExtEvtqueue'
             }
           ]
         },
@@ -225,6 +253,13 @@ describe('generateResources method', () => {
         Properties: {
           DelaySeconds: 5,
           QueueName: 'serviceName-stageName-bar-queue',
+          VisibilityTimeout: 4000,
+        },
+        Type: 'AWS::SQS::Queue'
+      },
+      SQSQueuehandleExtEvtqueue: {
+        Properties: {
+          QueueName: 'serviceName-stageName-handleExtEvt-queue',
           VisibilityTimeout: 4000,
         },
         Type: 'AWS::SQS::Queue'
@@ -276,6 +311,30 @@ describe('generateResources method', () => {
         },
         Type: 'AWS::SNS::Subscription',
       },
+      SQSQueuehandleExtEvtqueueToSNSTopicsomeexternaltopicSubscription: {
+        Type: 'AWS::SNS::Subscription',
+        Properties: {
+          Endpoint: {
+            'Fn::GetAtt': [
+              'SQSQueuehandleExtEvtqueue',
+              'Arn'
+            ]
+          },
+          Protocol: 'sqs',
+          TopicArn: 'arn:aws:sns:us-east-1:10101010:some-external-topic'
+        }
+      },
+      SQSQueuehandleExtEvtqueueTohandleExtEvt: {
+        Type: 'AWS::Lambda::EventSourceMapping',
+        Properties: {
+          EventSourceArn: {
+           'Fn::GetAtt': ['SQSQueuehandleExtEvtqueue', 'Arn'],
+          },
+          FunctionName: {
+            'Fn::GetAtt': ['handleExtEvtLogicalID', 'Arn']
+          }
+        },
+      }
     });
   });
 });
