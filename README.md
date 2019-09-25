@@ -81,6 +81,26 @@ functions:
           queue: true # resolves to myTopicConsumer-queue
 ```
 
+You may also have need to subscribe to a topic that is managed outside of this service. For this use-case, simply provide a hard coded `arn` value for the topic (in addition to a unique topic `name`).
+
+```yaml
+functions:
+  myExternalTopicConsumer:
+    handler: mymodule.myhandler
+    events:
+      - pubSub:
+          topic:
+            name: my-external-topic
+            arn: arn:aws:sns:us-east-1:12345:my-external-topic
+            # You may also use intrinsic functions
+            # arn:
+            #   Fn::Join
+            #     - ':'
+            #     - - arn:aws:sns:us-east-1
+            #       - AWS::AccountId
+            #       - my-external-topic
+          queue: true
+```
 
 ### Publisher
 

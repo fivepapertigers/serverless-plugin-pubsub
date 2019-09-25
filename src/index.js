@@ -97,6 +97,15 @@ function pullTopicSubscriptionDetailsFromEvent(pubSub) {
   return (pubSub && pubSub.topic && pubSub.topic.subscription) || null;
 }
 
+/**
+ * Pulls the external topic arn from the pubSub Event if it is defined
+ * @param  {object} pubSub PubSub event
+ * @return {object}
+ */
+function topicExternalArn(pubSub) {
+  return (pubSub && pubSub.topic && pubSub.topic.arn) || null;
+}
+
 
 function getOrSet(name, collection, createFunc) {
   let item = collection.find(i => i.name === name);
@@ -181,9 +190,11 @@ class ServerlessPluginPubSub {
    * @param  {string} queueName   Name of the topic
    * @return {Topic}
    */
-  getTopic(topicName) {
+  getTopic(topicName, arn = null) {
    return getOrSet(topicName, this.topics, () => new Topic({
-        name: topicName, vendorConfig: this.customTopics[topicName] || {}
+        name: topicName,
+        vendorConfig: this.customTopics[topicName] || {},
+        arn: arn
     }));
   }
 
@@ -234,9 +245,11 @@ class ServerlessPluginPubSub {
           throw Error(`No topic could be identified for pubSub subscription to ${funcName}`);
         }
 
+        // Get the external Arn for the topic
+        const externalArn = topicExternalArn(pubSub);
 
         // Get or create the Topic resource
-        const topic = this.getTopic(topicName);
+        const topic = this.getTopic(topicName, externalArn);
 
         // Pull the topic subscription details
         const topicSubDetails = pullTopicSubscriptionDetailsFromEvent(pubSub);
@@ -330,12 +343,18 @@ class ServerlessPluginPubSub {
   generateSNSEventFromSubscription(sub) {
     const func = sub.subscriber;
     const topicName = sub.origin.name;
-    func.events.push({
-      sns: {
-        arn: this.formatTopicArn(sub.origin),
-        topicName: this.namespaceResource(topicName)
-      }
-    });
+    if (sub.origin.arn) {
+      func.events.push({
+        sns: {arn: sub.origin.arn}
+      });
+    } else {
+      func.events.push({
+        sns: {
+          arn: this.formatTopicArn(sub.origin),
+          topicName: this.namespaceResource(topicName)
+        }
+      });
+    }
   }
 
   /**
@@ -343,7 +362,10 @@ class ServerlessPluginPubSub {
    */
   generateAllCustomResources() {
     this.queues.forEach(q => this.generateSQSResource(q));
-    this.topics.forEach(t => this.generateSNSResource(t));
+    this.topics
+      // Only create topics without a hard-coded arn
+      .filter(t => !t.arn)
+      .forEach(t => this.generateSNSResource(t));
     this.subscriptions.forEach(s =>
       s instanceof QueueToFuncSubscription
         ? this.generateSQSLambdaSubscription(s)
@@ -402,7 +424,9 @@ class ServerlessPluginPubSub {
       );
 
     const props = {
-      TopicArn: {Ref: this.naming.getTopicLogicalId(sub.origin.name)},
+      TopicArn: sub.origin.arn || {
+        Ref: this.naming.getTopicLogicalId(sub.origin.name)
+      },
       Protocol: sub instanceof TopicToFuncSubscription ? 'lambda' : 'sqs',
       Endpoint:
         {
@@ -628,7 +652,7 @@ class ServerlessPluginPubSub {
         Resource: '*',
         Condition: {
           ArnEquals: {
-            'aws:SourceArn': {Ref: this.naming.getTopicLogicalId(t.name)}
+            'aws:SourceArn': t.arn || {Ref: this.naming.getTopicLogicalId(t.name)}
           }
         }
       }));

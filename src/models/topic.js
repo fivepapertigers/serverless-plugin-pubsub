@@ -9,11 +9,12 @@ const logger = require('../logger');
 
 class Topic {
 
-  constructor({name, vendorConfig}) {
+  constructor({name, vendorConfig, arn = null}) {
     this.name = name;
     this.vendorConfig = vendorConfig;
     this.subscriptions = [];
     this.type = 'topic';
+    this.arn = arn;
   }
 
   addSubscriber(subscriber, config) {
