@@ -1,12 +1,14 @@
 # Serverless PubSub
 
+Simple pub/sub configuration with queuing for the Serverless Framework
+
 ## Motivation
 
-[Publish-subscribe](https://en.wikipedia.org/wiki/Publish%E2%80%93subscribe_pattern) is a pattern used in message mediated architectures that is meant to decouple logical units in a codebase or software system. Serverless computing, or more specifically, Function-as-a-Service computing, caters rather well to a messaging infrastructure, since "serverless" functions are configured and priced to be ephemeral units of execution that allow for easy chaining.
+[Publish/subscribe](https://en.wikipedia.org/wiki/Publish%E2%80%93subscribe_pattern) is a pattern used in message mediated architectures that is meant to decouple logical units in a codebase or software system. Serverless computing, or more specifically, Function-as-a-Service computing, caters rather well to a messaging infrastructure, since "serverless" functions are configured and priced to be ephemeral units of execution that allow for easy chaining.
 
-Many of the major platforms offer their own tooling and services for implementing pub/sub in your serverless stacks. In the AWS landscape, pub/sub is made possible through the Simple Notification Service, which exposes topics that to which functions can either publish or subscribe. As one of AWS's older offerings, SNS is well-understood, feature-rich, and has a native with the Serverless framework.
+Many of the major platforms offer their own tooling and services for implementing pub/sub in your serverless stacks. In the AWS landscape, pub/sub is made possible through the Simple Notification Service, which exposes topics to which functions can either publish or subscribe. As one of AWS's older offerings, SNS is well-understood, feature-rich, and has a native integration with the Serverless framework.
 
-However, there are a number of headaches that one encouters when using SNS as a serverless pub/sub engine, particularly when used with the Serverless framework:
+However, there are a number of headaches that one encounters when using SNS as a serverless pub/sub engine, particularly when used with the Serverless framework:
 
 - Permissions for publishers (and sometimes for subscribers) must be configured manually, either on a topic-by-topic basis or using wildcarding
 - Queuing (through SQS) is an absolute nightmare to set up in conjunction with SNS
@@ -22,16 +24,16 @@ With those limitations in mind, this plugin aims to provide the following for th
 - Common configuration of shared topic configuration in a single location
 - Easy queuing configuration for throttling incoming messages using Amazon SQS
 - Simple creation of topics, even if they do not have subscribers
-- Syntax that blends in seamlessly by following commonly used Serverless config patterns
+- Syntax that blends in seamlessly by following commonly used Serverless config syntaxes
 - A high-degree of customization, when desired, so that the developer can take advantage of all the features AWS has to offer
-- Automatic permissioning that aims for least-privelege topic/queue/function access (no wild-carding!)
+- Automatic permission generation that aims for least-privilege topic/queue/function access (no wild-carding!)
 - A [local runtime](#offline-mode) for executing pub/sub functions
 
 ## Installation
 
 Install the plugin with:
 
-```bash
+```console
 npm install --save-dev serverless-plugin-pubsub
 ```
 
@@ -46,7 +48,9 @@ plugins:
 
 ### Subscriber
 
-To add a pub/sub event, simply use the `pubSub` event syntax on a new or existing function. In its simplest form, all you need to provide is a topic:
+#### Topics
+
+To add a pub/sub event, simply use the `pubSub` event syntax on a new or existing function. In its simplest form, all you need to provide is a topic name:
 
 ```yaml
 functions:
@@ -67,19 +71,7 @@ functions:
           topic: my-first-topic
 ```
 
-It is often advantageous to have a message queue as an intermediary between your topic and your function. This can be used to throttle message activity (using reserved function concurrency) during times of heavy load on the system.
-
-To place a queue as an intermediary between your topic and your , simply set the `queue` or `queue.name` parameter to `true` (it is `false`, by default) or to the desired name of the queue. If you do not specify a queue name, one will be generated based on the function name.
-
-```yaml
-functions:
-  myTopicConsumer:
-    handler: mymodule.myhandler
-    events:
-      - pubSub:
-          topic: my-first-topic
-          queue: true # resolves to myTopicConsumer-queue
-```
+#### External Topics
 
 You may also have need to subscribe to a topic that is managed outside of this service. For this use-case, simply provide a hard coded `arn` value for the topic (in addition to a unique topic `name`).
 
@@ -92,7 +84,7 @@ functions:
           topic:
             name: my-external-topic
             arn: arn:aws:sns:us-east-1:12345:my-external-topic
-            # You may also use intrinsic functions
+            # You may also use intrinsic functions as well:
             # arn:
             #   Fn::Join
             #     - ':'
@@ -101,6 +93,23 @@ functions:
             #       - my-external-topic
           queue: true
 ```
+
+#### Queues
+
+It is often advantageous to have a message queue as an intermediary between your topic and your function. This can be used to throttle message activity (using reserved function concurrency) or toggle message consumption without losing incoming messages.
+
+To place a queue as an intermediary between your topic and your function, simply set the `queue` or `queue.name` parameter to `true` (it is `false`, by default) or to the desired name of the queue. If you do not specify a queue name, one will be generated based on the function name.
+
+```yaml
+functions:
+  myTopicConsumer:
+    handler: mymodule.myhandler
+    events:
+      - pubSub:
+          topic: my-first-topic
+          queue: true # resolves to myTopicConsumer-queue
+```
+
 
 ### Publisher
 
@@ -127,13 +136,13 @@ module.exports = {
     await SNS.publish({
       Message: 'hello world',
       TopicArn: process.env.PUBLISH_TOPIC_ARN // e.g. arn:aws:sns:us-east-1:123456789:my-first-topic
-    }).promise())
+    }).promise()
   }
 };
 ```
 
 
-Note: if a topic is referenced with the `pubSubTopic` anywhere in the stack, it will be created regardless of whether it has a corresponding subscriber. This allows for a lot of important configurations, such as cross-service subscription and future extensibility.
+Note: if a topic is referenced with the `pubSubTopic` anywhere in the stack, it will be created as a part of the stack regardless of whether it has a corresponding subscriber. This allows for a lot of important configurations, such as cross-service subscription and future extensibility, and it ensures your Lambda doesn't fail trying to publish to a non-existent topic.
 
 ### Advanced Configuration
 
@@ -205,7 +214,7 @@ custom:
 
 This plugin features an offline mode, which spins up a local server for testing your integration offline:
 
-```bash
+```console
 serverless pubSub offline
 ```
 
@@ -234,12 +243,12 @@ Feel free to open a pull request with any additions or enhancements. A failing t
 
 To install:
 
-```bash
+```console
 npm install
 ```
 
 To run tests:
-```bash
+```console
 npm test
 # or
 npm test --- --watch
