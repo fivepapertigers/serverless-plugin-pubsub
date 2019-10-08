@@ -614,13 +614,11 @@ class ServerlessPluginPubSub {
     const statements = this.serverless.service.provider.iamRoleStatements || [];
     this.serverless.service.provider.iamRoleStatements = statements;
 
-    statements.push(
-      ...this.topics.map(t => ({
-        Effect: 'Allow',
-        Action: ['sns:Publish'],
-        Resource: this.formatTopicArn(t)
-      }))
-    );
+    statements.push({
+      Effect: 'Allow',
+      Action: ['sns:Publish'],
+      Resource: this.topics.map(t => t.arn || this.formatTopicArn(t))
+    });
   }
 
   /**
