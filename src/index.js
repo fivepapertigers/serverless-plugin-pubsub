@@ -618,7 +618,7 @@ class ServerlessPluginPubSub {
       ...this.topics.map(t => ({
         Effect: 'Allow',
         Action: ['sns:Publish'],
-        Resource: this.formatTopicArn(t)
+        Resource: t.arn || this.formatTopicArn(t)
       }))
     );
   }

@@ -338,3 +338,51 @@ describe('generateResources method', () => {
     });
   });
 });
+
+
+describe('allowLambdasToPublishSNS method', () => {
+  test('should generate a statement for each topic', async() => {
+    await plugin.hooks['after:package:initialize']();
+    expect(sls.service.provider.iamRoleStatements).toEqual([
+      {
+        Action: ['sns:Publish'],
+        Effect: 'Allow',
+        Resource: {
+          'Fn::Join': [
+            ':',
+            [
+              'arn',
+              {Ref: 'AWS::Partition'},
+              'sns',
+              {Ref: 'AWS::Region'},
+              {Ref: 'AWS::AccountId'},
+              'serviceName-stageName-foo-happened'
+            ]
+          ]
+        }
+      },
+      {
+        Action: ['sns:Publish'],
+        Effect: 'Allow',
+        Resource: 'arn:aws:sns:us-east-1:10101010:some-external-topic'
+      },
+      {
+        Action: ['sns:Publish'],
+        Effect: 'Allow',
+        Resource: {
+          'Fn::Join': [
+            ':',
+            [
+              'arn',
+              {Ref: 'AWS::Partition'},
+              'sns',
+              {Ref: 'AWS::Region'},
+              {Ref: 'AWS::AccountId'},
+              'serviceName-stageName-baz-happened'
+            ]
+          ]
+        }
+      }
+    ]);
+  });
+});
