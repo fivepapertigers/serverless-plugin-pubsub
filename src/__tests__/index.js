@@ -189,39 +189,17 @@ describe('generateResources method', () => {
                 Action: 'sqs:SendMessage',
                 Condition: {
                   ArnEquals: {
-                    'aws:SourceArn': {
-                      Ref: 'SNSTopicfoohappened'
-                    }
+                    'aws:SourceArn': [
+                      { Ref: 'SNSTopicfoohappened' },
+                      'arn:aws:sns:us-east-1:10101010:some-external-topic',
+                      { Ref: 'SNSTopicbazhappened' }
+                     ]
                   }
                 },
                 Effect: 'Allow',
                 Principal: '*',
                 Resource: '*'
               },
-              {
-                Action: 'sqs:SendMessage',
-                Condition: {
-                  ArnEquals: {
-                    'aws:SourceArn': 'arn:aws:sns:us-east-1:10101010:some-external-topic'
-                  }
-                },
-                Effect: 'Allow',
-                Principal: '*',
-                Resource: '*'
-              },
-              {
-                Action: 'sqs:SendMessage',
-                Condition: {
-                  ArnEquals: {
-                    'aws:SourceArn': {
-                      Ref: 'SNSTopicbazhappened'
-                    }
-                  }
-                },
-                Effect: 'Allow',
-                Principal: '*',
-                Resource: '*'
-              }
             ],
             Version: '2012-10-17'
           },
