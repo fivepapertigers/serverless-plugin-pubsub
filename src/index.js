@@ -631,7 +631,17 @@ class ServerlessPluginPubSub {
         Queues: [],
         PolicyDocument: {
           Version: '2012-10-17',
-          Statement: [],
+          Statement: [{
+            Effect: 'Allow',
+            Principal: '*',
+            Action: 'sqs:SendMessage',
+            Resource: '*',
+            Condition: {
+              ArnEquals: {
+                'aws:SourceArn': []
+              }
+            }
+          }],
         }
       }
     };
@@ -639,21 +649,12 @@ class ServerlessPluginPubSub {
     const queueArns = unique(this.queues, (q) => q.name)
       .map(q => ({Ref: this.naming.getActualQueueLogicalId(q.name)}));
 
-    const statements = unique(this.topics, (t) => t.name)
-      .map(t => ({
-        Effect: 'Allow',
-        Principal: '*',
-        Action: 'sqs:SendMessage',
-        Resource: '*',
-        Condition: {
-          ArnEquals: {
-            'aws:SourceArn': t.arn || {Ref: this.naming.getTopicLogicalId(t.name)}
-          }
-        }
-      }));
+    const topicArns = unique(this.topics, (t) => t.name)
+      .map(t => t.arn || {Ref: this.naming.getTopicLogicalId(t.name)});
 
     policy.Properties.Queues = policy.Properties.Queues.concat(queueArns);
-    policy.Properties.PolicyDocument.Statement = policy.Properties.PolicyDocument.Statement.concat(statements);
+    const arnEq = policy.Properties.PolicyDocument.Statement[0].Condition.ArnEquals['aws:SourceArn'].concat(topicArns);
+    policy.Properties.PolicyDocument.Statement[0].Condition.ArnEquals['aws:SourceArn'] = arnEq;
 
     this.slsCustomResources.SNSToSQSPolicy = policy;
   }
