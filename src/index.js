@@ -158,6 +158,7 @@ class ServerlessPluginPubSub {
         () => {
           this.collectPubSubResourcesFromFunctions();
           this.collectPubSubResourcesFromCustomConfig();
+          this.adjustQueueVisibilityTimeout();
           this.generateAdditionalEvents();
           this.generateAllCustomResources();
           this.allowLambdasToPublishSNS();
@@ -474,6 +475,56 @@ class ServerlessPluginPubSub {
         {}, this.queueSubscriptionDefaults, props, sub.vendorConfig
       )
     };
+  }
+
+  /**
+   * Sets the default visibility timeouts of all queues to be five seconds
+   * longer than the longest function timeout. This prevents CloudFormation
+   * errors that are thrown when the queue visibility timeout is less than the
+   * function timeout
+   */
+
+  adjustQueueVisibilityTimeout() {
+    const providerTimeout = this.serverless.service.provider.timeout;
+    const subsByQueue = this.subscriptions.reduce(
+      (accum, sub) => {
+        if (sub instanceof QueueToFuncSubscription) {
+          const queue = sub.origin;
+          const subs = accum[queue.name] || [];
+          subs.push(sub);
+          accum[queue.name] = subs;
+        }
+        return accum;
+      },
+      {}
+    );
+
+
+    for (let queueName in subsByQueue) {
+      const subs = subsByQueue[queueName];
+      const queue = subs[0].origin;
+      const vendorConfig = queue.vendorConfig || {};
+      const configuredTimeout = vendorConfig.VisibilityTimeout || this.queueDefaults.VisibilityTimeout;
+
+      const timeouts = subs.map(sub =>
+        sub.subscriber.serverlessConfig.timeout || providerTimeout || 6
+      );
+
+      const maxFunctionTimeout = Math.max(...timeouts);
+      // If visibility timeout is manually configured, either throw an error or
+      // short-circuit
+      if (configuredTimeout) {
+        if (configuredTimeout < maxFunctionTimeout) {
+          throw new Error(
+            `Specified visibility timeout for ${queue.name} (${configuredTimeout}s) is less than function timeout (${maxFunctionTimeout}s)`
+          );
+        }
+      } else {
+        vendorConfig.VisibilityTimeout = maxFunctionTimeout + 5;
+        queue.vendorConfig = vendorConfig;
+      }
+
+    }
   }
 
   /**
