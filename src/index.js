@@ -676,10 +676,17 @@ class ServerlessPluginPubSub {
    * Allows SQS queues to poll SNS topics
    */
   allowSNSToSQSSubscriptions() {
+
+    const queueArns = unique(this.queues, (q) => q.name)
+      .map(q => ({Ref: this.naming.getActualQueueLogicalId(q.name)}));
+
+    const topicArns = unique(this.topics, (t) => t.name)
+      .map(t => t.arn || {Ref: this.naming.getTopicLogicalId(t.name)});
+
     const policy = this.slsCustomResources.SNSToSQSPolicy || {
       Type: 'AWS::SQS::QueuePolicy',
       Properties: {
-        Queues: [],
+        Queues: queueArns,
         PolicyDocument: {
           Version: '2012-10-17',
           Statement: [{
@@ -689,7 +696,7 @@ class ServerlessPluginPubSub {
             Resource: '*',
             Condition: {
               ArnEquals: {
-                'aws:SourceArn': []
+                'aws:SourceArn': topicArns
               }
             }
           }],
@@ -697,17 +704,11 @@ class ServerlessPluginPubSub {
       }
     };
 
-    const queueArns = unique(this.queues, (q) => q.name)
-      .map(q => ({Ref: this.naming.getActualQueueLogicalId(q.name)}));
+    // Only create the policy if there are both topics and queues
+    if (queueArns.length > 0 && topicArns.length > 0) {
+      this.slsCustomResources.SNSToSQSPolicy = policy;
+    }
 
-    const topicArns = unique(this.topics, (t) => t.name)
-      .map(t => t.arn || {Ref: this.naming.getTopicLogicalId(t.name)});
-
-    policy.Properties.Queues = policy.Properties.Queues.concat(queueArns);
-    const arnEq = policy.Properties.PolicyDocument.Statement[0].Condition.ArnEquals['aws:SourceArn'].concat(topicArns);
-    policy.Properties.PolicyDocument.Statement[0].Condition.ArnEquals['aws:SourceArn'] = arnEq;
-
-    this.slsCustomResources.SNSToSQSPolicy = policy;
   }
 
   startServer() {
