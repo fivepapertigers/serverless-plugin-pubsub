@@ -358,3 +358,35 @@ describe('allowLambdasToPublishSNS method', () => {
     ]);
   });
 });
+
+describe('pubSubTopic variable', () => {
+  test('is replaced correctly in online mode', async() => {
+    expect(
+        await plugin.configurationVariablesSources.pubSubTopic.resolve({
+        address: 'my-topic'
+      })
+    ).toEqual({
+      value: {
+        'Fn::Join': [
+          ':', [
+            'arn',
+            {Ref: 'AWS::Partition'},
+            'sns',
+            {Ref: 'AWS::Region'}, {Ref: 'AWS::AccountId'},
+            'serviceName-stageName-my-topic'
+          ]
+        ]
+      }
+    });
+  });
+  test('is replaced correctly in offline mode', async() => {
+    plugin.offlineMode = true;
+    expect(
+        await plugin.configurationVariablesSources.pubSubTopic.resolve({
+          address: 'my-topic'
+        })
+    ).toEqual({
+      value: 'arn:aws:sns:us-east-1:1234567890123:serviceName-stageName-my-topic'
+    });
+  });
+});
