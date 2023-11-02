@@ -6,5 +6,5 @@ examples_dir=$(pwd)/examples
 
 for example in $(ls $examples_dir); do
     cd $examples_dir/$example
-    serverless package -s dev -v
+    npx serverless package -s dev -v
 done

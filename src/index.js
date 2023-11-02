@@ -646,15 +646,19 @@ class ServerlessPluginPubSub {
    * processing
    */
   injectVariableReplacementSyntax() {
-    const originalMethod = this.serverless.variables.getValueFromSource.bind(this.serverless.variables);
-    const self = this;
-    this.serverless.variables.getValueFromSource = function (variableString) {
-      if (variableString.match(pubSubTopicSyntax)){
-        const topicName = variableString.replace(pubSubTopicSyntax, '');
-        const topic = self.getTopic(topicName);
-        return self.formatTopicArn(topic);
+    const getTopic = this.getTopic.bind(this);
+    const formatTopicArn = this.formatTopicArn.bind(this);
+
+    this.configurationVariablesSources = {
+      pubSubTopic: {
+        async resolve({ address }) {
+
+          // Resolver is expected to return an object with the value in the `value` property:
+          return {
+            value: formatTopicArn(getTopic(address)),
+          };
+        },
       }
-      return originalMethod(variableString);
     };
   }
 
